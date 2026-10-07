@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:olistic:confiance:schema:demande:1",
+  "title": "Demande de revue v1 — désigne, n'affirme rien",
+  "description": "Corps exact d'une issue de demande : identifiant de demande à usage unique, alias, pointe, déclaration P1. La base n'est jamais demandée : c'est l'ancre gouvernée. Tout autre champ est refusé.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "request_id",
+    "depot",
+    "pointe",
+    "declaration_p1"
+  ],
+  "properties": {
+    "format": {
+      "const": "olistic.confiance.demande/1"
+    },
+    "request_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "depot": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,39}$"
+    },
+    "pointe": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "declaration_p1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "classe",
+        "auteur"
+      ],
+      "properties": {
+        "classe": {
+          "enum": [
+            "A",
+            "B"
+          ]
+        },
+        "auteur": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,39}$"
+        }
+      }
+    }
+  }
+}

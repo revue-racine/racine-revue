@@ -1,0 +1,47 @@
+{
+  "format": "olistic.confiance.politique/1",
+  "version": 1,
+  "generation": 1,
+  "racine": {
+    "proprietaire": "revue-racine",
+    "proprietaire_id": 339338245,
+    "depot": "racine-revue",
+    "depot_id": 1409404929,
+    "workflow": ".github/workflows/revue.yml",
+    "nom_workflow": "revue",
+    "ref": "refs/heads/main"
+  },
+  "type_predicat": "urn:olistic:confiance:attestation-revue:1",
+  "demandeurs": [
+    {
+      "login": "miguelfromba",
+      "id": 241122414
+    }
+  ],
+  "depots": [
+    {
+      "alias": "auto-test",
+      "repository_id": 1409404929
+    }
+  ],
+  "relecteurs": [
+    {
+      "famille": "factice",
+      "actif": true,
+      "acceptable": false,
+      "modeles": [
+        null
+      ]
+    }
+  ],
+  "fraicheur": {
+    "coupure": "2026-10-07T00:00:00Z",
+    "validite_s": 604800,
+    "tolerance_instant_s": 1800,
+    "derive_horloge_s": 60
+  },
+  "limites": {
+    "corps_demande_octets": 1024,
+    "diff_octets": 500000
+  }
+}

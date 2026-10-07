@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:olistic:confiance:schema:ancres:1",
+  "title": "Ancres gouvernées v1",
+  "description": "Base de revue de chaque dépôt : dernier état accepté, modifié par PR sur main seulement. Une ancre nulle interdit toute revue du dépôt. Le demandeur ne choisit jamais la base.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "ancres"
+  ],
+  "properties": {
+    "format": {
+      "const": "olistic.confiance.ancres/1"
+    },
+    "ancres": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "alias",
+          "commit",
+          "objet_sha256"
+        ],
+        "properties": {
+          "alias": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{1,39}$"
+          },
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "objet_sha256": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    }
+  }
+}

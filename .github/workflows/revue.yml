@@ -1,0 +1,134 @@
+# Workflow de confiance — protocole revue/1 (protocol/revue-v1.md).
+#
+# Déclencheur unique : ouverture d'une issue. GitHub exécute toujours ce
+# fichier depuis la branche par défaut protégée ; aucune branche, aucun fork,
+# aucun appelant ne peut fournir une autre version du workflow.
+#
+# Invariants (vérifiés par tests/test_workflow.py) :
+# - aucune expression ${{ }} dans un bloc run ; les données d'événement ne
+#   passent que par $GITHUB_EVENT_PATH, lu par outils/revue.py ;
+# - permissions vides au niveau du workflow, minimales par job ;
+# - seul le job `attestation` détient id-token et attestations, et il ne
+#   traite aucun contenu candidat autrement que par git plumbing ;
+# - aucune action tierce non épinglée par SHA ; aucun artifact téléversé ;
+# - la base de revue est l'ancre gouvernée (policy/ancres-v1.json), jamais
+#   une donnée de la demande ;
+# - Lot 1 : aucun secret référencé, aucun pont P1 exécuté.
+name: revue
+
+on:
+  issues:
+    types: [opened]
+
+permissions: {}
+
+concurrency:
+  group: revue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  admission:
+    name: Admission de la demande
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read # lister les demandes antérieures pour écarter les doublons de request_id
+    outputs:
+      admis: ${{ steps.admission.outputs.admis }}
+      motif: ${{ steps.admission.outputs.motif }}
+      demande: ${{ steps.admission.outputs.demande }}
+    steps:
+      - name: Garde de contexte
+        if: github.ref != 'refs/heads/main' || github.event_name != 'issues'
+        run: exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: admission
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -I outils/revue.py admission --evenement "$GITHUB_EVENT_PATH" --sortie "$GITHUB_OUTPUT"
+
+  revue:
+    name: Sujet recalculé et relecture
+    needs: admission
+    if: needs.admission.outputs.admis == 'oui'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      statut: ${{ steps.revue.outputs.statut }}
+      motif: ${{ steps.revue.outputs.motif }}
+      predicat: ${{ steps.revue.outputs.predicat }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: revue
+        env:
+          ADMIS: ${{ needs.admission.outputs.demande }}
+        run: python3 -I outils/revue.py revue --travail "$RUNNER_TEMP/candidat.git" --sortie "$GITHUB_OUTPUT"
+
+  attestation:
+    name: Contrôle indépendant et signature
+    needs: [admission, revue]
+    if: needs.revue.outputs.statut == 'pret'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write # jeton OIDC pour le certificat Sigstore de l'attestation
+      attestations: write # enregistrement de l'attestation dans l'API GitHub
+    outputs:
+      url: ${{ steps.attest.outputs.attestation-url }}
+      verdict: ${{ steps.preparer.outputs.verdict }}
+      sujet_digest: ${{ steps.preparer.outputs.sujet_digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: preparer
+        env:
+          ADMIS: ${{ needs.admission.outputs.demande }}
+          PREDICAT: ${{ needs.revue.outputs.predicat }}
+        run: python3 -I outils/revue.py preparer --travail "$RUNNER_TEMP/independant.git" --dossier "$RUNNER_TEMP/a-signer" --sortie "$GITHUB_OUTPUT"
+      - id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.preparer.outputs.sujet_nom }}
+          subject-digest: ${{ steps.preparer.outputs.sujet_digest }}
+          predicate-type: urn:olistic:confiance:attestation-revue:1
+          predicate-path: ${{ runner.temp }}/a-signer/predicat.json
+          create-storage-record: false
+          show-summary: false
+
+  reponse:
+    name: Réponse sur l'issue
+    needs: [admission, revue, attestation]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write # commenter puis fermer l'issue de demande, rien d'autre
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - env:
+          ADMIS_OUI: ${{ needs.admission.outputs.admis }}
+          MOTIF_ADMISSION: ${{ needs.admission.outputs.motif }}
+          STATUT_REVUE: ${{ needs.revue.outputs.statut }}
+          MOTIF_REVUE: ${{ needs.revue.outputs.motif }}
+          RESULTAT_ATTESTATION: ${{ needs.attestation.result }}
+          VERDICT: ${{ needs.attestation.outputs.verdict }}
+          SUJET_DIGEST: ${{ needs.attestation.outputs.sujet_digest }}
+          URL_ATTESTATION: ${{ needs.attestation.outputs.url }}
+          NUMERO: ${{ github.event.issue.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -I outils/revue.py reponse --fichier "$RUNNER_TEMP/reponse.md"
+          gh issue comment "$NUMERO" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/reponse.md"
+          gh issue close "$NUMERO" --repo "$GITHUB_REPOSITORY"

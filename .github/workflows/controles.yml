@@ -1,0 +1,40 @@
+# Contrôles statiques du dépôt de confiance. Statut requis par la règle
+# `main-protege` avant toute fusion. Aucun secret, jeton en lecture seule :
+# s'exécute aussi sur les PR venues de forks sans rien exposer.
+name: controles
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: controles-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  controles:
+    name: Contrôles statiques
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Dépendances de test épinglées par empreinte
+        run: python3 -m pip install --user --no-deps --require-hashes -r tests/requirements.txt
+      - name: actionlint épinglé par empreinte
+        run: bash tests/installer-actionlint.sh "$RUNNER_TEMP/bin"
+      - name: Tests
+        run: python3 -m unittest discover -s tests -v
+      - name: actionlint
+        run: '"$RUNNER_TEMP/bin/actionlint" -no-color .github/workflows/*.yml'
+      - name: zizmor (aucun constat toléré, informatif compris)
+        run: '"$HOME/.local/bin/zizmor" --offline --persona=auditor --min-severity=informational .github/workflows/'
+      - name: Politique ancrée
+        run: python3 -I outils/revue.py politique --finale

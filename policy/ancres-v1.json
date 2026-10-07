@@ -1,0 +1,10 @@
+{
+  "format": "olistic.confiance.ancres/1",
+  "ancres": [
+    {
+      "alias": "auto-test",
+      "commit": null,
+      "objet_sha256": null
+    }
+  ]
+}

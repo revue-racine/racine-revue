@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:olistic:confiance:schema:sortie-relecteur:1",
+  "title": "Sortie brute du relecteur v1 — privée, jamais publiée",
+  "description": "Toute sortie non conforme devient INDETERMINE (sortie_invalide) ; FAVORABLE avec un constat bloquant ou majeur devient INDETERMINE (favorable_incoherent). Seul son sha256 entre dans l'attestation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "verdict",
+    "constats"
+  ],
+  "properties": {
+    "verdict": {
+      "enum": [
+        "FAVORABLE",
+        "DEFAVORABLE",
+        "INDETERMINE"
+      ]
+    },
+    "constats": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "gravite",
+          "titre",
+          "detail"
+        ],
+        "properties": {
+          "gravite": {
+            "enum": [
+              "bloquant",
+              "majeur",
+              "mineur",
+              "info"
+            ]
+          },
+          "titre": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 4000
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,244 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:olistic:confiance:schema:attestation-revue:1",
+  "title": "Prédicat d'attestation de revue v1 (public, permanent)",
+  "description": "Prédicat in-toto de type urn:olistic:confiance:attestation-revue:1, inscrit dans un journal de transparence public et immuable : aucun chemin, nom de fichier, message de commit, nom de dépôt, diff ni texte de revue.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "sujet",
+    "demande",
+    "protocole",
+    "politique",
+    "ancres_sha256",
+    "relecteur",
+    "verdict",
+    "motif",
+    "rapport_sha256",
+    "instant"
+  ],
+  "properties": {
+    "format": {
+      "const": "olistic.confiance.attestation-revue/1"
+    },
+    "sujet": {
+      "$ref": "#/$defs/sujet"
+    },
+    "demande": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "issue",
+        "demandeur_id",
+        "request_id",
+        "declaration_p1"
+      ],
+      "properties": {
+        "issue": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "demandeur_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "request_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "declaration_p1": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "classe",
+            "auteur"
+          ],
+          "properties": {
+            "classe": {
+              "enum": [
+                "A",
+                "B"
+              ]
+            },
+            "auteur": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{1,39}$"
+            }
+          }
+        }
+      }
+    },
+    "protocole": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "sha256"
+      ],
+      "properties": {
+        "version": {
+          "const": "revue/1"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "politique": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "generation",
+        "sha256"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "ancres_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "relecteur": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "famille",
+        "modele"
+      ],
+      "properties": {
+        "famille": {
+          "enum": [
+            "factice",
+            "codex"
+          ]
+        },
+        "modele": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9._:/-]{1,100}$"
+        }
+      }
+    },
+    "verdict": {
+      "enum": [
+        "FAVORABLE",
+        "DEFAVORABLE",
+        "INDETERMINE"
+      ]
+    },
+    "motif": {
+      "enum": [
+        null,
+        "relecteur_factice",
+        "relecteur",
+        "sortie_invalide",
+        "favorable_incoherent",
+        "delai_depasse",
+        "diff_trop_grand",
+        "erreur_relecteur"
+      ]
+    },
+    "rapport_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "instant": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    }
+  },
+  "$defs": {
+    "sujet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "depot",
+        "base",
+        "pointe",
+        "perimetre_sha256"
+      ],
+      "properties": {
+        "format": {
+          "const": "olistic.confiance.sujet-revue/1"
+        },
+        "depot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "alias",
+            "repository_id"
+          ],
+          "properties": {
+            "alias": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{1,39}$"
+            },
+            "repository_id": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "base": {
+          "$ref": "#/$defs/identite_commit"
+        },
+        "pointe": {
+          "$ref": "#/$defs/identite_commit"
+        },
+        "perimetre_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "identite_commit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "objet_sha256",
+        "arbre",
+        "arbre_sha256"
+      ],
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "objet_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "arbre": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "arbre_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}
