@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import aide
 
@@ -33,6 +34,8 @@ MOTIFS_SECRETS = [
 def fichiers():
     for p in aide.RACINE.rglob("*"):
         rel = p.relative_to(aide.RACINE).as_posix()
+        if rel == ".git" or rel.startswith(".git/"):
+            continue  # métadonnées du checkout (CI comprise), pas le contenu publié
         if p.is_file() and "__pycache__" not in rel:
             yield rel, p
 
@@ -60,6 +63,29 @@ class TestBundle(unittest.TestCase):
         for rel, p in fichiers():
             if rel.startswith("tests/"):
                 self.assertNotRegex(p.read_text("utf-8"), r'"[0-9a-f]{64}",\n', rel)
+
+    def test_git_racine_ignore_contenu_toujours_controle(self):
+        mail = "runner" + "@" + "exemple.org\n"
+        jeton = "ghp_" + "A" * 24 + "\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            racine = Path(tmp)
+            for rel in AUTORISES | {"tests/aide.py"}:
+                (racine / rel).parent.mkdir(parents=True, exist_ok=True)
+                (racine / rel).write_text("rien\n")
+            (racine / ".git/logs").mkdir(parents=True)
+            (racine / ".git/logs/HEAD").write_text(mail + jeton)
+            controles = (self.test_inventaire_ferme, self.test_aucune_adresse_mail, self.test_aucun_secret_ni_cle)
+            with mock.patch.object(aide, "RACINE", racine):
+                for controle in controles:
+                    controle()  # le même motif sous .git/ est ignoré
+                (racine / "README.md").write_text(mail + jeton)
+                for controle in controles[1:]:
+                    with self.subTest(controle=controle.__name__), self.assertRaises(self.failureException):
+                        controle()
+                (racine / "sous/.git").mkdir(parents=True)
+                (racine / "sous/.git/HEAD").write_text("rien\n")
+                with self.assertRaises(self.failureException):
+                    self.test_inventaire_ferme()  # seul le .git/ de la racine est exclu
 
     def test_controle_noms_detecte_et_ne_publie_rien(self):
         with tempfile.TemporaryDirectory() as tmp:
