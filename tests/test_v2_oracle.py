@@ -67,6 +67,15 @@ class TestOracle(unittest.TestCase):
                 self.assertEqual(revue.sha256_hex(revue.canonique(produit)), oracle_v2.digest(attendu))
                 self.assertEqual(revue2.nom_sujet(produit, aide.RID), oracle_v2.nom(attendu, aide.RID))
 
+    def test_format_du_sujet_v2_distinct_du_v1(self):
+        """Le sujet produit porte le format v2 du protocole, que l'oracle écrit en
+        dur : un sujet au format v1 aurait le digest d'une attestation v1."""
+        c = self.cand
+        produit = aide_v2.sujet_v2_pour(c, c.c3)
+        self.assertEqual(produit["format"], "olistic.confiance.sujet-revue/2")
+        self.assertEqual(oracle_v2.digest(produit),
+                         oracle_v2.digest(oracle_v2.sujet(c.chemin, c.c1, c.c3, "candidat", aide.CANDIDAT_ID)))
+
     def test_sujet_v1_identique_a_l_oracle_et_digest_distinct(self):
         c = self.cand
         v1 = aide.sujet_pour(c, c.c3)

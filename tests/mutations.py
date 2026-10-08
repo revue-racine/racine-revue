@@ -197,7 +197,7 @@ MUTATIONS = [
     ('v2 : sujet au format v1', 'outils/revue2.py',
      'FORMAT_SUJET = "olistic.confiance.sujet-revue/2"',
      'FORMAT_SUJET = "olistic.confiance.sujet-revue/1"',
-     'test_v2_predicat.TestPredicatV2.test_sujet_et_nom_v2'),
+     'test_v2_oracle.TestOracle.test_format_du_sujet_v2_distinct_du_v1'),
     ('v2 : clé non exigée avant tout calcul', 'outils/revue2.py',
      '            if not cle:',
      '            if False:',

@@ -44,7 +44,8 @@ class TestEnveloppe(unittest.TestCase):
             self.assertEqual(self.motif(corps), "relecteur_enveloppe_illisible", corps)
 
     def test_statut_non_termine_ou_erreur(self):
-        for env in (enveloppe(status="incomplete", incomplete_details={"reason": "max_output_tokens"}),
+        for env in (enveloppe(status="incomplete"),  # statut seul, sans incomplete_details
+                    enveloppe(status="incomplete", incomplete_details={"reason": "max_output_tokens"}),
                     enveloppe(status="failed"), enveloppe(status="in_progress"), enveloppe(status=None),
                     enveloppe(error={"code": "server_error"}),
                     enveloppe(incomplete_details={"reason": "content_filter"})):
