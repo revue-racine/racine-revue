@@ -19,7 +19,6 @@ est celle que le fournisseur déclare ; elle n'est pas prouvée.
 import copy
 import http.client
 import json
-import re
 import signal
 import ssl
 import sys
@@ -38,10 +37,12 @@ LECTURE = 65536
 MAX_OUTPUT_TOKENS = 32000
 EFFORT = "medium"
 NOM_FORMAT = "sortie_relecteur_v1"
-# Format admis d'une clé, vérifié AVANT toute construction d'en-tête : une clé
-# hors format (retour à la ligne, espace, caractère de contrôle) ne doit jamais
-# atteindre http.client, dont les erreurs d'en-tête reprennent la valeur.
-FORMAT_CLE = re.compile(r"[A-Za-z0-9_-]{20,512}")
+# La clé est OPAQUE : aucun alphabet ni préfixe commercial n'est supposé. Seule
+# est vérifiée, AVANT toute construction d'en-tête, la sûreté de son passage dans
+# `Authorization` : non vide, taille bornée, caractères ASCII visibles seulement
+# (ni CR/LF, ni caractère de contrôle, ni espace, ni caractère hors ASCII, que
+# http.client refuserait en reprenant la valeur dans son message d'erreur).
+CLE_TAILLE_MAX = 4096
 FICHIER_CONSIGNE = Path(__file__).resolve().parent / "consigne-relecteur-v2.txt"
 
 # Projection du schéma local vers Structured Outputs (§5.3) : liste blanche.
@@ -129,80 +130,132 @@ def connexion_defaut():
     return http.client.HTTPSConnection(HOTE, PORT, timeout=DELAI_SOCKET_S, context=contexte_tls())
 
 
-def _echeance(signum, frame):
-    raise _Echeance()
+def cle_utilisable(cle):
+    """Sûreté de la clé dans un en-tête HTTP, rien d'autre (la clé est opaque)."""
+    return 0 < len(cle) <= CLE_TAILLE_MAX and all("\x21" <= c <= "\x7e" for c in cle)
 
 
-_NON_ARME = object()
+class _Minuterie:
+    """Alarme murale à usage unique. Le gestionnaire ne lève `_Echeance` qu'une
+    fois, et seulement tant que la minuterie est active : une fois désactivée
+    (première instruction du nettoyage) ou après avoir sonné, toute alarme
+    tardive est muette. `echue` reste vrai si l'exception a été avalée en route."""
+
+    def __init__(self):
+        self.active = False
+        self.echue = False
+        self.installee = False
+        self.precedent = None
+
+    def _sonner(self, signum, frame):
+        if self.active:
+            self.active = False
+            self.echue = True
+            raise _Echeance()
+
+    def armer(self, delai):
+        try:
+            self.precedent = signal.signal(signal.SIGALRM, self._sonner)
+            self.installee = True
+            self.active = True
+            signal.setitimer(signal.ITIMER_REAL, delai)
+        except (ValueError, OSError):  # hors du fil principal, ou minuterie indisponible
+            self.active = False
+            raise revue.Refus("relecteur_minuterie")
+
+    def desarmer(self):
+        """Idempotent. Désactive d'abord : une alarme pendant la suite est muette."""
+        self.active = False
+        try:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+        except OSError:
+            pass  # minuterie jamais armée : rien à désarmer
+        if self.installee:
+            signal.signal(signal.SIGALRM, self.precedent)
+            self.installee = False
+
+    def verifier(self):
+        if self.echue:
+            raise _Echeance()
+
+
+def _nettoyer(minuterie, etat):
+    """Idempotent : désarme, restaure le gestionnaire, ferme la connexion."""
+    minuterie.desarmer()
+    conn, etat["conn"] = etat["conn"], None
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _echanger(minuterie, etat, cle, corps, connexion, delai_total, taille_max):
+    try:
+        minuterie.armer(delai_total)
+        etat["conn"] = conn = (connexion or connexion_defaut)()
+        conn.request("POST", CHEMIN, body=corps, headers={
+            "Authorization": "Bearer " + cle,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Accept-Encoding": "identity",
+            "User-Agent": "racine-revue/2",
+        })
+        rep = conn.getresponse()
+        minuterie.verifier()
+        statut = rep.status
+        if statut != 200:
+            if 300 <= statut < 400:
+                raise revue.Refus("relecteur_redirection")
+            if statut == 429:
+                raise revue.Refus("relecteur_quota")
+            if 400 <= statut < 500:
+                raise revue.Refus("relecteur_http_client")
+            raise revue.Refus("relecteur_http_serveur")
+        if (rep.getheader("Content-Encoding") or "identity").strip().lower() != "identity":
+            raise revue.Refus("relecteur_encodage")
+        morceaux, total = [], 0
+        while True:
+            bloc = rep.read(LECTURE)
+            minuterie.verifier()
+            if not bloc:
+                break
+            total += len(bloc)
+            if total > taille_max:
+                raise revue.Refus("relecteur_trop_grand")
+            morceaux.append(bloc)
+        return b"".join(morceaux)
+    except revue.Refus:
+        raise
+    except (OSError, http.client.HTTPException):  # ssl.SSLError et socket.timeout compris
+        raise revue.Refus("relecteur_connexion")
+    except Exception:  # noqa: BLE001 — tout le reste : échec fermé, sans détail
+        raise revue.Refus("relecteur_interne")
 
 
 def appeler(cle, corps, connexion=None, delai_total=DELAI_TOTAL_S, taille_max=TAILLE_MAX):
     """Un seul POST. Rend le corps de réponse (octets) d'un statut 200, ou lève
-    `revue.Refus`. Aucune exception ne porte la clé ni le contenu échangé."""
+    `revue.Refus`. Aucune exception ne porte la clé ni le contenu échangé.
+
+    Toute échéance donne `relecteur_delai`, où qu'elle survienne, y compris
+    pendant le nettoyage : celui-ci est alors repris, et l'alarme ne peut plus
+    sonner. Désarmement, restauration du gestionnaire et fermeture de la
+    connexion ont toujours lieu."""
     if not isinstance(cle, str) or not cle:
         raise revue.Refus("relecteur_cle_absente")
-    if FORMAT_CLE.fullmatch(cle) is None:
+    if not cle_utilisable(cle):
         raise revue.Refus("relecteur_cle_invalide")
-    precedent, conn = _NON_ARME, None
+    minuterie, etat = _Minuterie(), {"conn": None}
     try:
         try:
-            try:
-                precedent = signal.signal(signal.SIGALRM, _echeance)
-                signal.setitimer(signal.ITIMER_REAL, delai_total)
-            except (ValueError, OSError):  # hors du fil principal, ou minuterie indisponible
-                raise revue.Refus("relecteur_minuterie")
-            conn = (connexion or connexion_defaut)()
-            conn.request("POST", CHEMIN, body=corps, headers={
-                "Authorization": "Bearer " + cle,
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "Accept-Encoding": "identity",
-                "User-Agent": "racine-revue/2",
-            })
-            rep = conn.getresponse()
-            statut = rep.status
-            if statut != 200:
-                if 300 <= statut < 400:
-                    raise revue.Refus("relecteur_redirection")
-                if statut == 429:
-                    raise revue.Refus("relecteur_quota")
-                if 400 <= statut < 500:
-                    raise revue.Refus("relecteur_http_client")
-                raise revue.Refus("relecteur_http_serveur")
-            if (rep.getheader("Content-Encoding") or "identity").strip().lower() != "identity":
-                raise revue.Refus("relecteur_encodage")
-            morceaux, total = [], 0
-            while True:
-                bloc = rep.read(LECTURE)
-                if not bloc:
-                    break
-                total += len(bloc)
-                if total > taille_max:
-                    raise revue.Refus("relecteur_trop_grand")
-                morceaux.append(bloc)
-            return b"".join(morceaux)
-        except revue.Refus:
-            raise
-        except _Echeance:
-            raise revue.Refus("relecteur_delai")
-        except (OSError, http.client.HTTPException):  # ssl.SSLError et socket.timeout compris
-            raise revue.Refus("relecteur_connexion")
-        except Exception:  # noqa: BLE001 — tout le reste : échec fermé, sans détail
-            raise revue.Refus("relecteur_interne")
-    except _Echeance:  # minuterie échue pendant le traitement d'une autre erreur
-        raise revue.Refus("relecteur_delai")
-    finally:
-        if precedent is not _NON_ARME:
-            try:
-                signal.setitimer(signal.ITIMER_REAL, 0)
-            except OSError:
-                pass  # minuterie jamais armée : rien à désarmer
-            signal.signal(signal.SIGALRM, precedent)
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:  # noqa: BLE001
-                pass
+            corps_reponse = _echanger(minuterie, etat, cle, corps, connexion, delai_total, taille_max)
+        finally:
+            _nettoyer(minuterie, etat)
+        minuterie.verifier()
+        return corps_reponse
+    except _Echeance:
+        _nettoyer(minuterie, etat)  # nettoyage peut-être interrompu : repris, l'alarme est muette
+        raise revue.Refus("relecteur_delai") from None
 
 
 # --------------------------------------------------------------- enveloppe
@@ -240,7 +293,7 @@ def analyser_enveloppe(octets, modele):
             raise revue.Refus("relecteur_element_inattendu")
         if t == "reasoning":
             continue
-        if element.get("role", "assistant") != "assistant" or not isinstance(element.get("content"), list):
+        if element.get("role") != "assistant" or not isinstance(element.get("content"), list):
             raise revue.Refus("relecteur_enveloppe_illisible")
         for partie in element["content"]:
             tp = partie.get("type") if isinstance(partie, dict) else None

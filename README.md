@@ -73,6 +73,24 @@ attestations du sujet, récupérées par `bundle_url`. C'est une vérification p
 elle n'autorise rien. Le seul chemin vers une attestation SSH P1 est
 `outils/pont_p1.py`, qui vérifie, consomme et signe dans une seule opération.
 
+## Coexistence `revue/1` et `revue/2`
+
+| | `revue/1` | `revue/2` |
+|---|---|---|
+| Production | arrêtée à la fusion du Lot 2 | seule production du workflow |
+| Attestations existantes | restent vérifiables, inchangées | — |
+| Protocole, politique, schémas | `revue-v1.md`, `confiance-v1.json` (génération 1), `*-v1` : figés octet pour octet | `revue-v2.md`, `confiance-v2.json` (génération 2), sujet / prédicat / politique en `-v2` |
+| Vérificateur, configuration consommateur | `verifier.py`, configuration v1 épinglant la politique v1 | `verifier2.py`, configuration **candidate distincte** épinglant la politique v2 |
+| Relecteur, portée | `factice`, jamais acceptable | `openai-responses`, **non acceptable** : consultatif |
+| Pont P1 | `pont_p1.py`, v1 seulement, inactif | aucun |
+
+Communs et inchangés : format de demande (un `request_id` est unique pour les deux
+versions), ancres gouvernées, schéma et normalisation de la sortie du relecteur.
+Les sujets v1 et v2 ont des formats distincts : leurs digests ne se mêlent jamais.
+Un vérificateur n'accepte jamais une attestation de l'autre version (type de
+prédicat épinglé). Ne jamais réutiliser une configuration consommateur v1 pour le v2,
+ni l'inverse.
+
 ## Données rendues publiques
 
 Tout ce dépôt est public, et le reste tant que l'administrateur ne le supprime

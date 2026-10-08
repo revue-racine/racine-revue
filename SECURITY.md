@@ -14,6 +14,11 @@ demande sous l'identité d'un demandeur par son seul login, consommer deux fois
 un même `request_id`, obtenir une `Review-Attestation` sans attestation vérifiée
 et consommée, ou faire accepter un bundle qui ne vient pas de `bundle_url`.
 
+Les deux versions coexistent (README, « Coexistence ») : faire accepter par un
+vérificateur une attestation de l'autre version, faire produire par le workflow une
+attestation `revue/1` après le Lot 2, ou altérer un artefact v1 figé est dans le
+périmètre.
+
 Pour `revue/2` également : faire apparaître la clé du relecteur hors de l'en-tête
 d'autorisation (prompt, journal, sortie, attestation, autre job), faire émettre une
 attestation à partir d'une enveloppe fournisseur invalide, faire exécuter par le

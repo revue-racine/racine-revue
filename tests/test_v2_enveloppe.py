@@ -68,6 +68,15 @@ class TestEnveloppe(unittest.TestCase):
         for p in ({"type": "output_audio"}, {"type": "output_text", "text": 1}, {"type": "output_text"}):
             self.assertEqual(self.motif(enveloppe(sortie=[message(p)])), "relecteur_element_inattendu", p)
 
+    def test_role_absent_refuse(self):
+        """Le rôle `assistant` est exigé explicitement : un message sans rôle n'est
+        jamais une sortie du relecteur (refus, aucune attestation)."""
+        sans_role = {"type": "message", "content": [texte('{"verdict":"FAVORABLE","constats":[]}')]}
+        self.assertEqual(self.motif(enveloppe(sortie=[sans_role])), "relecteur_enveloppe_illisible")
+        for role in (None, "", "system", "developer", "tool", "Assistant"):
+            m = dict(sans_role, role=role)
+            self.assertEqual(self.motif(enveloppe(sortie=[m])), "relecteur_enveloppe_illisible", role)
+
     def test_role_ou_contenu_inattendu(self):
         self.assertEqual(self.motif(enveloppe(sortie=[{"type": "message", "role": "user",
                                                         "content": [texte("{}")]}])),

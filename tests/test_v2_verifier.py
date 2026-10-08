@@ -41,12 +41,45 @@ class TestVerifierV2(unittest.TestCase):
             self.assertFalse(d.acceptee)
             self.assertEqual(d["motif"], "relecteur_non_acceptable", verdict)
 
-    def test_refus_independant_de_la_fraicheur(self):
-        """`relecteur_non_acceptable` précède la fraîcheur : même périmée ou
-        antérieure à la coupure, l'attestation est rejetée pour ce motif."""
+    def test_canari_revele_les_anomalies_de_fraicheur_malgre_acceptable_false(self):
+        """`relecteur_non_acceptable` vient en DERNIER : sous acceptable:false, une
+        attestation périmée, antérieure à la coupure, future ou d'instant
+        incohérent est signalée par son propre motif."""
+        cas = {
+            "anterieure_a_la_coupure": [{"type": "Tlog", "timestamp": "2026-10-07T23:00:00Z"}],
+            "attestation_perimee": [{"type": "Tlog", "timestamp": "2026-10-08T11:59:00Z"}],
+            "horodatage_futur": [{"type": "Tlog", "timestamp": "2026-10-08T12:10:00Z"}],
+            "horodatage_absent": [],
+            "horodatage_illisible": [{"type": "Tlog", "timestamp": "hier"}],
+        }
+        for motif, horodatages in cas.items():
+            r = self.bon()
+            r["verificationResult"]["verifiedTimestamps"] = horodatages
+            maintenant = T + __import__("datetime").timedelta(days=30) if motif == "attestation_perimee" else T
+            d = verifier2.evaluer([r], self.sujet, aide.RID, aide_v2.confiance_v2(), aide_v2.politique_v2_ancree(),
+                                  maintenant)
+            self.assertEqual(d["motif"], motif)
         r = self.bon()
-        r["verificationResult"]["verifiedTimestamps"] = [{"timestamp": "2020-01-01T00:00:00Z"}]
-        self.assertEqual(self.evaluer([r])["motif"], "relecteur_non_acceptable")
+        r["verificationResult"]["verifiedTimestamps"] = [{"type": "Tlog", "timestamp": "2026-10-08T11:59:59Z"}]
+        r["verificationResult"]["statement"]["predicate"]["instant"] = "2026-10-08T11:00:00Z"
+        self.assertEqual(self.evaluer([r])["motif"], "instant_incoherent")
+
+    def test_canari_revele_un_modele_non_autorise_malgre_acceptable_false(self):
+        pol = aide_v2.politique_v2_ancree()
+        r = self.bon()
+        r["verificationResult"]["statement"]["predicate"]["relecteur"]["modele"] = "autre-modele"
+        self.assertEqual(self.evaluer([r], pol=pol)["motif"], "modele_non_autorise")
+
+    def test_canari_revele_la_provenance_malgre_acceptable_false(self):
+        for champ, valeur in (("buildTrigger", "workflow_dispatch"), ("runnerEnvironment", "self-hosted"),
+                              ("sourceRepositoryRef", "refs/heads/autre")):
+            cert = aide.certificat_conforme()
+            cert[champ] = valeur
+            r = aide_v2.resultat_v2(aide_v2.predicat_v2(self.sujet), cert=cert)
+            self.assertEqual(self.evaluer([r])["motif"], f"certificat:{champ}")
+
+    def test_seule_une_attestation_saine_atteint_relecteur_non_acceptable(self):
+        self.assertEqual(self.evaluer([self.bon()])["motif"], "relecteur_non_acceptable")
 
     def test_acceptable_ne_vient_jamais_du_predicat(self):
         r = self.bon()

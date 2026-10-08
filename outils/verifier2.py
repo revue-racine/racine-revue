@@ -9,7 +9,9 @@ politique v2, sujet v2, prédicat v2, relecteur `openai-responses`.
 VÉRIFICATION PURE : la décision n'est jamais une autorisation et ne consomme
 rien. Aucun pont n'existe pour le v2. Sous la politique génération 2,
 `openai-responses` n'est pas acceptable : toute attestation v2 est rejetée
-(`relecteur_non_acceptable`), quel que soit son verdict.
+(`relecteur_non_acceptable`), quel que soit son verdict — mais seulement après
+tous les autres contrôles (provenance, prédicat, modèle, fraîcheur), pour qu'un
+canari révèle toute autre anomalie par son propre motif.
 """
 import argparse
 import datetime
@@ -89,10 +91,6 @@ def controler(resultat, sujet, conf, pol, maintenant):
     rel = next((r for r in pol["relecteurs"] if r["famille"] == predicat["relecteur"]["famille"]), None)
     if rel is None or not rel["actif"]:
         raise Invalide("relecteur_inactif")
-    if predicat["relecteur"]["acceptable"] is not rel["acceptable"]:
-        raise Invalide("acceptable_divergent")
-    if not rel["acceptable"]:
-        raise Invalide("relecteur_non_acceptable")
     if predicat["relecteur"]["modele"] not in rel["modeles"]:
         raise Invalide("modele_non_autorise")
     t = verifier.instant_verifie(vr, pol, maintenant)
@@ -100,6 +98,12 @@ def controler(resultat, sujet, conf, pol, maintenant):
     ecart = (t - instant).total_seconds() if instant else None
     if ecart is None or not (-pol["fraicheur"]["derive_horloge_s"] <= ecart <= pol["fraicheur"]["tolerance_instant_s"]):
         raise Invalide("instant_incoherent")
+    # En DERNIER : sous acceptable:false (canari), une anomalie de provenance, de
+    # modèle ou de fraîcheur est signalée par son propre motif, jamais masquée.
+    if predicat["relecteur"]["acceptable"] is not rel["acceptable"]:
+        raise Invalide("acceptable_divergent")
+    if not rel["acceptable"]:
+        raise Invalide("relecteur_non_acceptable")
     return predicat, t
 
 

@@ -93,19 +93,31 @@ class TestTransport(unittest.TestCase):
                 self.assertEqual(cm.exception.motif, "relecteur_cle_absente")
             self.assertEqual(s.connexions, 0)
 
-    def test_cle_hors_format_refusee_avant_tout_en_tete(self):
-        """Une clé hors format n'atteint jamais http.client (dont les erreurs
-        d'en-tête reprennent la valeur) : refus codé, aucune connexion."""
+    def test_cle_opaque_aucun_alphabet_ni_prefixe_impose(self):
+        """La clé est opaque : tout ce qui est sûr dans un en-tête passe, quel que
+        soit son alphabet ou son préfixe."""
+        with ServeurLocal() as s:
+            for cle in ("a", "x" * 4096, "proj_AbC.def+ghi/jkl=mno:pqr~", "!#$%&'*+-.^_`|~0123456789",
+                        "Zz9" * 100):
+                ro.appeler(cle, b"{}", s.connexion())
+            vues = [e["Authorization"] for _, e, _ in s.requetes]
+        self.assertEqual(len(vues), 5)
+        self.assertEqual(vues[2], "Bearer proj_AbC.def+ghi/jkl=mno:pqr~")
+
+    def test_cle_dangereuse_en_en_tete_refusee_avant_tout_en_tete(self):
+        """CR/LF, caractères de contrôle, espaces, caractères hors ASCII, taille
+        excessive : refus codé, aucune connexion, aucune exception chaînée."""
         valide = aide_v2.CLE
         with ServeurLocal() as s:
-            for cle in (valide + "\n", valide + "\r\nX-Fuite: 1", valide + " ", "court", "é" * 30,
-                        valide + "\x00", "a" * 513):
+            for cle in (valide + "\n", valide + "\r\nX-Fuite: 1", "\r" + valide, valide + " ", " " + valide,
+                        valide + "\t", valide + "\x00", valide + "\x7f", valide + "\x1b", valide + "\u00a0",
+                        valide + "\u2028", valide + "é", "x" * 4097):
                 with self.assertRaises(revue.Refus) as cm:
                     ro.appeler(cle, b"{}", s.connexion())
                 e = cm.exception
                 self.assertEqual(e.motif, "relecteur_cle_invalide", repr(cle))
                 self.assertIsNone(e.__context__)
-                self.assertNotIn(cle.strip(), repr(e) + str(e.args))
+                self.assertNotIn(valide, repr(e) + str(e.args))
             self.assertEqual(s.connexions, 0)
 
     def test_minuterie_indisponible_refus_code_sans_connexion(self):
@@ -150,6 +162,110 @@ class TestTransport(unittest.TestCase):
                     pass
             self.assertIs(ro.signal.getsignal(ro.signal.SIGALRM), avant, mode)
 
+    # --- nettoyage : alarme déclenchée de façon déterministe aux points sensibles
+
+    def sonner(self):
+        """Simule l'alarme à cet instant précis : appelle le gestionnaire installé."""
+        ro.signal.getsignal(ro.signal.SIGALRM)(ro.signal.SIGALRM, None)
+
+    def etat_propre(self, avant, conn):
+        self.assertEqual(ro.signal.getitimer(ro.signal.ITIMER_REAL), (0.0, 0.0))
+        self.assertIs(ro.signal.getsignal(ro.signal.SIGALRM), avant)
+        self.assertEqual(conn.fermetures, 1)
+
+    def appel_simule(self, conn, **kw):
+        avant = ro.signal.getsignal(ro.signal.SIGALRM)
+        with self.assertRaises(revue.Refus) as cm:
+            ro.appeler(aide_v2.CLE, b"{}", lambda: conn, delai_total=60, **kw)
+        self.etat_propre(avant, conn)
+        return cm.exception
+
+    def test_alarme_pendant_l_attente_de_la_reponse(self):
+        conn = FausseConnexion(self, sur_reponse=self.sonner)
+        e = self.appel_simule(conn)
+        self.assertEqual(e.motif, "relecteur_delai")
+        self.assertIsNone(e.__cause__)
+
+    def test_alarme_pendant_la_lecture(self):
+        conn = FausseConnexion(self, sur_lecture=self.sonner)
+        self.assertEqual(self.appel_simule(conn).motif, "relecteur_delai")
+
+    def test_alarme_au_debut_du_nettoyage_apres_succes(self):
+        """La fenêtre corrigée : alarme entre la fin de l'échange et le
+        désarmement. Le nettoyage interrompu est repris ; refus codé."""
+        conn = FausseConnexion(self)
+        reel = ro._nettoyer
+        def interrompu(m, etat):
+            self.sonner()
+            reel(m, etat)
+        with mock.patch.object(ro, "_nettoyer", interrompu):
+            self.assertEqual(self.appel_simule(conn).motif, "relecteur_delai")
+
+    def test_alarme_au_debut_du_nettoyage_pendant_un_refus(self):
+        conn = FausseConnexion(self, statut=503)
+        reel = ro._nettoyer
+        def interrompu(m, etat):
+            self.sonner()
+            reel(m, etat)
+        with mock.patch.object(ro, "_nettoyer", interrompu):
+            self.assertEqual(self.appel_simule(conn).motif, "relecteur_delai")
+
+    def test_alarme_pendant_le_desarmement_muette(self):
+        """Après la première instruction du nettoyage, l'alarme ne lève plus rien."""
+        conn = FausseConnexion(self)
+        reel_setitimer = ro.signal.setitimer
+        def setitimer(quel, delai, *a):
+            if delai == 0:
+                self.sonner()
+            return reel_setitimer(quel, delai, *a)
+        avant = ro.signal.getsignal(ro.signal.SIGALRM)
+        with mock.patch.object(ro.signal, "setitimer", setitimer):
+            self.assertEqual(ro.appeler(aide_v2.CLE, b"{}", lambda: conn, delai_total=60), aide_v2.enveloppe())
+        self.etat_propre(avant, conn)
+
+    def test_alarme_pendant_la_fermeture_muette(self):
+        conn = FausseConnexion(self, sur_fermeture=self.sonner)
+        avant = ro.signal.getsignal(ro.signal.SIGALRM)
+        self.assertEqual(ro.appeler(aide_v2.CLE, b"{}", lambda: conn, delai_total=60), aide_v2.enveloppe())
+        self.etat_propre(avant, conn)
+
+    def test_alarme_avalee_par_une_bibliotheque_reste_une_echeance(self):
+        def avaler():
+            try:
+                self.sonner()
+            except BaseException:  # noqa: BLE001 — bibliothèque fautive simulée
+                pass
+        conn = FausseConnexion(self, sur_lecture=avaler)
+        self.assertEqual(self.appel_simule(conn).motif, "relecteur_delai")
+
+    def test_alarme_avalee_pendant_l_attente_prime_sur_le_statut(self):
+        """Échéance avalée pendant `getresponse` puis statut 503 : l'échéance est
+        constatée aussitôt (`relecteur_delai`), avant tout traitement du statut."""
+        def avaler():
+            try:
+                self.sonner()
+            except BaseException:  # noqa: BLE001
+                pass
+        conn = FausseConnexion(self, statut=503, sur_reponse=avaler)
+        self.assertEqual(self.appel_simule(conn).motif, "relecteur_delai")
+
+    def test_alarme_avalee_pendant_la_lecture_arrete_la_lecture(self):
+        def avaler():
+            try:
+                self.sonner()
+            except BaseException:  # noqa: BLE001
+                pass
+        conn = FausseConnexion(self, sur_lecture=avaler)
+        conn.restant = b"x" * (ro.LECTURE * 5)
+        self.assertEqual(self.appel_simule(conn).motif, "relecteur_delai")
+        self.assertEqual(conn.lectures, 1)
+
+    def test_deux_alarmes_une_seule_echeance(self):
+        def deux():
+            self.sonner()
+        conn = FausseConnexion(self, sur_reponse=deux, sur_fermeture=self.sonner)
+        self.assertEqual(self.appel_simule(conn).motif, "relecteur_delai")
+
     def test_erreur_inattendue_fermee(self):
         def cassee():
             raise RuntimeError("détail interne " + aide_v2.CLE)
@@ -189,3 +305,42 @@ class TestTransport(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FausseConnexion:
+    """Connexion simulée, sans réseau, avec des points d'accroche pour déclencher
+    l'alarme à un instant précis."""
+
+    def __init__(self, test, statut=200, sur_reponse=None, sur_lecture=None, sur_fermeture=None):
+        self.test, self.statut, self.fermetures, self.lectures = test, statut, 0, 0
+        self.sur_reponse, self.sur_lecture, self.sur_fermeture = sur_reponse, sur_lecture, sur_fermeture
+        self.restant = aide_v2.enveloppe()
+
+    def request(self, *a, **k):
+        pass
+
+    def getresponse(self):
+        if self.sur_reponse:
+            self.sur_reponse()
+        return self
+
+    @property
+    def status(self):
+        return self.statut
+
+    def getheader(self, nom):
+        return None
+
+    def read(self, n):
+        self.lectures += 1
+        if self.sur_lecture:
+            accroche, self.sur_lecture = self.sur_lecture, None
+            accroche()
+        bloc, self.restant = self.restant[:n], self.restant[n:]
+        return bloc
+
+    def close(self):
+        self.fermetures += 1
+        if self.sur_fermeture:
+            accroche, self.sur_fermeture = self.sur_fermeture, None
+            accroche()
