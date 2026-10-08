@@ -111,7 +111,7 @@ l'hôte. Le noter dans le gestionnaire de secrets.
 |---|---|---|
 | 1 | `<operateur>` ouvre une demande `auto-test` (nouveau `request_id`, pointe = un commit de `main` postérieur à l'ancre) | réponse « attestée, verdict `INDETERMINE` » ; base attestée = ancre |
 | 2 | vérification sur l'appareil de l'administrateur (`outils/verifier.py`, configuration épinglant commit du workflow, empreintes de politique et de protocole, génération) | signature et provenance valides, décision **rejet** (relecteur factice non acceptable) |
-| 2 bis | même demande réouverte avec le même `request_id` | refus `request_id_deja_utilise`, aucune attestation |
+| 2 bis | même demande ouverte dans une nouvelle issue avec le même `request_id` | refus `request_id_deja_utilise`, aucune attestation |
 | 3 | un octet du prédicat modifié dans le bundle téléchargé (`--bundle`) | `gh attestation verify` échoue |
 | 4 | demande par un autre compte | refus `demandeur_non_autorise`, aucune attestation |
 | 5 | demande avec un champ `verdict` ou `base` | refus `demande_invalide`, aucune attestation |
