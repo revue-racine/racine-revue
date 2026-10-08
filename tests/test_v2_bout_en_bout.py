@@ -100,6 +100,22 @@ class TestBoutEnBoutV2(unittest.TestCase):
         self.assertEqual((pred["verdict"], pred["motif"]), ("INDETERMINE", "sortie_invalide"))
         self.assertIsNotNone(pred["rapport_sha256"])
 
+    def test_nettoyage_en_echec_aucune_attestation(self):
+        """Restauration du gestionnaire impossible après un échange réussi :
+        refus `relecteur_nettoyage`, aucun prédicat, aucune préparation."""
+        avant = relecteur_openai.signal.getsignal(relecteur_openai.signal.SIGALRM)
+        reel = relecteur_openai.signal.signal
+        self.addCleanup(lambda: reel(relecteur_openai.signal.SIGALRM, avant))
+        def fausse(signum, gestionnaire):
+            if gestionnaire is avant:
+                raise ValueError("restauration impossible")
+            return reel(signum, gestionnaire)
+        with aide_v2.ServeurLocal() as s, mock.patch.object(relecteur_openai.signal, "signal", fausse):
+            _, r, p = self.lancer(s)
+        self.assertEqual((r["statut"], r["motif"], p), ("refus", "relecteur_nettoyage", None))
+        self.assertNotIn("predicat", r)
+        self.assertFalse((self.tmp / "sig").exists())
+
     def test_cle_absente_refus_sans_appel(self):
         with aide_v2.ServeurLocal() as s:
             _, r, p = self.lancer(s, cle=None)

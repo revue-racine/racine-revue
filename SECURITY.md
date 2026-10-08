@@ -4,9 +4,13 @@ Signaler une vulnérabilité par le signalement privé de GitHub (onglet Securit
 jamais par une issue : les issues de ce dépôt sont publiques et servent de canal
 de demande automatisé.
 
-Ce dépôt est une racine de confiance. Toute faiblesse qui permettrait d'obtenir
-une attestation signée par `.github/workflows/revue.yml@refs/heads/main` pour un
-sujet ou un verdict qui n'est pas le résultat du protocole `revue/1` est dans le
+Ce dépôt est une racine de confiance. `revue/1` y est conservé pour la
+vérification historique ; `revue/2` est le producteur actif prévu après la fusion
+du Lot 2, et son canari n'a aucun pouvoir autorisant (relecteur non acceptable
+sous la génération 2). Toute faiblesse qui permettrait d'obtenir une attestation
+signée par `.github/workflows/revue.yml@refs/heads/main` pour un sujet ou un
+verdict qui n'est pas le résultat du protocole déclaré (`revue/1` ou `revue/2`),
+ou de donner un effet autorisant à une attestation du canari, est dans le
 périmètre — en particulier : faire signer un prédicat non recalculé, faire
 exécuter une autre version du workflow, obtenir un jeton OIDC de ce dépôt hors
 du job `attestation`, faire paraître dans une attestation une donnée privée, faire admettre une

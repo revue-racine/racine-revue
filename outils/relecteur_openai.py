@@ -139,11 +139,17 @@ class _Minuterie:
     """Alarme murale à usage unique. Le gestionnaire ne lève `_Echeance` qu'une
     fois, et seulement tant que la minuterie est active : une fois désactivée
     (première instruction du nettoyage) ou après avoir sonné, toute alarme
-    tardive est muette. `echue` reste vrai si l'exception a été avalée en route."""
+    tardive est muette. `echue` reste vrai si l'exception a été avalée en route.
+
+    Portée de la garantie : la minuterie borne l'échange HTTP jusqu'au DÉBUT du
+    désarmement. Le désarmement, la restauration du gestionnaire et la fermeture
+    de la connexion qui suivent ne sont pas bornés par elle ; leurs échecs sont
+    constatés et convertis en refus (`relecteur_nettoyage`), jamais en succès."""
 
     def __init__(self):
         self.active = False
         self.echue = False
+        self.armee = False
         self.installee = False
         self.precedent = None
 
@@ -159,20 +165,30 @@ class _Minuterie:
             self.installee = True
             self.active = True
             signal.setitimer(signal.ITIMER_REAL, delai)
+            self.armee = True
         except (ValueError, OSError):  # hors du fil principal, ou minuterie indisponible
             self.active = False
             raise revue.Refus("relecteur_minuterie")
 
     def desarmer(self):
-        """Idempotent. Désactive d'abord : une alarme pendant la suite est muette."""
+        """Idempotent. Désactive d'abord : une alarme pendant la suite est muette.
+        Rend True si tout ce qui devait être défait l'a été. Chaque opération est
+        tentée même si la précédente a échoué ; un échec n'est jamais un succès."""
         self.active = False
-        try:
-            signal.setitimer(signal.ITIMER_REAL, 0)
-        except OSError:
-            pass  # minuterie jamais armée : rien à désarmer
+        ok = True
+        if self.armee:
+            try:
+                signal.setitimer(signal.ITIMER_REAL, 0)
+                self.armee = False
+            except Exception:  # noqa: BLE001 — alarme peut-être encore programmée
+                ok = False
         if self.installee:
-            signal.signal(signal.SIGALRM, self.precedent)
-            self.installee = False
+            try:
+                signal.signal(signal.SIGALRM, self.precedent)
+                self.installee = False
+            except Exception:  # noqa: BLE001 — restauration impossible
+                ok = False
+        return ok
 
     def verifier(self):
         if self.echue:
@@ -180,14 +196,18 @@ class _Minuterie:
 
 
 def _nettoyer(minuterie, etat):
-    """Idempotent : désarme, restaure le gestionnaire, ferme la connexion."""
-    minuterie.desarmer()
+    """Idempotent : désarme, restaure le gestionnaire, ferme la connexion. La
+    fermeture est tentée même si le désarmement a échoué. Rend False si le
+    désarmement ou la restauration a échoué (la fermeture est au mieux : une
+    connexion qui refuse de se fermer ne change rien à ce qui a été reçu)."""
+    ok = minuterie.desarmer()
     conn, etat["conn"] = etat["conn"], None
     if conn is not None:
         try:
             conn.close()
         except Exception:  # noqa: BLE001
             pass
+    return ok
 
 
 def _echanger(minuterie, etat, cle, corps, connexion, delai_total, taille_max):
@@ -249,13 +269,18 @@ def appeler(cle, corps, connexion=None, delai_total=DELAI_TOTAL_S, taille_max=TA
     try:
         try:
             corps_reponse = _echanger(minuterie, etat, cle, corps, connexion, delai_total, taille_max)
-        finally:
-            _nettoyer(minuterie, etat)
+        except BaseException:
+            if not _nettoyer(minuterie, etat):  # nettoyage en échec : il prime sur le refus en cours
+                raise revue.Refus("relecteur_nettoyage") from None
+            raise
+        nettoye = _nettoyer(minuterie, etat)
+        if not nettoye:  # jamais un succès après un nettoyage en échec
+            raise revue.Refus("relecteur_nettoyage")
         minuterie.verifier()
         return corps_reponse
     except _Echeance:
-        _nettoyer(minuterie, etat)  # nettoyage peut-être interrompu : repris, l'alarme est muette
-        raise revue.Refus("relecteur_delai") from None
+        # Nettoyage peut-être interrompu : repris (idempotent), l'alarme est muette.
+        raise revue.Refus("relecteur_delai" if _nettoyer(minuterie, etat) else "relecteur_nettoyage") from None
 
 
 # --------------------------------------------------------------- enveloppe

@@ -96,11 +96,16 @@ class TestTransport(unittest.TestCase):
     def test_cle_opaque_aucun_alphabet_ni_prefixe_impose(self):
         """La clé est opaque : tout ce qui est sûr dans un en-tête passe, quel que
         soit son alphabet ou son préfixe."""
+        refus = []
         with ServeurLocal() as s:
             for cle in ("a", "x" * 4096, "proj_AbC.def+ghi/jkl=mno:pqr~", "!#$%&'*+-.^_`|~0123456789",
                         "Zz9" * 100):
-                ro.appeler(cle, b"{}", s.connexion())
+                try:
+                    ro.appeler(cle, b"{}", s.connexion())
+                except revue.Refus as e:
+                    refus.append((cle[:12], e.motif))
             vues = [e["Authorization"] for _, e, _ in s.requetes]
+        self.assertEqual(refus, [])
         self.assertEqual(len(vues), 5)
         self.assertEqual(vues[2], "Bearer proj_AbC.def+ghi/jkl=mno:pqr~")
 
@@ -174,11 +179,20 @@ class TestTransport(unittest.TestCase):
         self.assertEqual(conn.fermetures, 1)
 
     def appel_simule(self, conn, **kw):
+        """Rend le refus ; toute autre issue (succès, exception brute comme une
+        `_Echeance` échappée) est un échec d'assertion, jamais une erreur de test."""
         avant = ro.signal.getsignal(ro.signal.SIGALRM)
-        with self.assertRaises(revue.Refus) as cm:
+        issue = None
+        try:
             ro.appeler(aide_v2.CLE, b"{}", lambda: conn, delai_total=60, **kw)
+        except revue.Refus as e:
+            issue = e
+        except BaseException as e:  # noqa: BLE001
+            self.fail(f"exception brute échappée : {type(e).__name__}")
+        if issue is None:
+            self.fail("aucun refus")
         self.etat_propre(avant, conn)
-        return cm.exception
+        return issue
 
     def test_alarme_pendant_l_attente_de_la_reponse(self):
         conn = FausseConnexion(self, sur_reponse=self.sonner)
@@ -197,7 +211,7 @@ class TestTransport(unittest.TestCase):
         reel = ro._nettoyer
         def interrompu(m, etat):
             self.sonner()
-            reel(m, etat)
+            return reel(m, etat)
         with mock.patch.object(ro, "_nettoyer", interrompu):
             self.assertEqual(self.appel_simule(conn).motif, "relecteur_delai")
 
@@ -206,7 +220,7 @@ class TestTransport(unittest.TestCase):
         reel = ro._nettoyer
         def interrompu(m, etat):
             self.sonner()
-            reel(m, etat)
+            return reel(m, etat)
         with mock.patch.object(ro, "_nettoyer", interrompu):
             self.assertEqual(self.appel_simule(conn).motif, "relecteur_delai")
 
@@ -220,7 +234,7 @@ class TestTransport(unittest.TestCase):
             return reel_setitimer(quel, delai, *a)
         avant = ro.signal.getsignal(ro.signal.SIGALRM)
         with mock.patch.object(ro.signal, "setitimer", setitimer):
-            self.assertEqual(ro.appeler(aide_v2.CLE, b"{}", lambda: conn, delai_total=60), aide_v2.enveloppe())
+            self.assertEqual(self.motif_sans_exception_brute(conn), "aucun refus")
         self.etat_propre(avant, conn)
 
     def test_alarme_pendant_la_fermeture_muette(self):
@@ -266,6 +280,98 @@ class TestTransport(unittest.TestCase):
         conn = FausseConnexion(self, sur_reponse=deux, sur_fermeture=self.sonner)
         self.assertEqual(self.appel_simule(conn).motif, "relecteur_delai")
 
+    # --- échecs du nettoyage lui-même (B2)
+
+    def motif_sans_exception_brute(self, conn):
+        """Motif du refus, ou nom de toute autre exception : une régression donne
+        un échec d'assertion (FAIL), jamais une erreur de test."""
+        try:
+            ro.appeler(aide_v2.CLE, b"{}", lambda: conn, delai_total=60)
+            return "aucun refus"
+        except revue.Refus as e:
+            return e.motif
+        except BaseException as e:  # noqa: BLE001
+            return type(e).__name__
+
+    def proteger_le_processus(self, avant):
+        """Un désarmement simulé en échec laisse une vraie alarme programmée :
+        on la défait ici, avec les vraies fonctions, pour ne pas tuer la suite."""
+        reel_setitimer, reel_signal = ro.signal.setitimer, ro.signal.signal
+        self.addCleanup(lambda: reel_signal(ro.signal.SIGALRM, avant))
+        self.addCleanup(lambda: reel_setitimer(ro.signal.ITIMER_REAL, 0))
+
+    def desarmement_en_echec(self):
+        reel = ro.signal.setitimer
+        def setitimer(quel, delai, *a):
+            if delai == 0:
+                raise ro.signal.ItimerError("désarmement impossible")
+            return reel(quel, delai, *a)
+        return mock.patch.object(ro.signal, "setitimer", setitimer)
+
+    def restauration_en_echec(self, avant):
+        reel = ro.signal.signal
+        def fausse(signum, gestionnaire):
+            if gestionnaire is avant:
+                raise ValueError("restauration impossible")
+            return reel(signum, gestionnaire)
+        return mock.patch.object(ro.signal, "signal", fausse)
+
+    def test_desarmement_en_echec_jamais_un_succes(self):
+        """setitimer(…, 0) en échec : refus `relecteur_nettoyage`, et les autres
+        opérations (restauration du gestionnaire, fermeture) ont lieu quand même."""
+        avant = ro.signal.getsignal(ro.signal.SIGALRM)
+        self.proteger_le_processus(avant)
+        for statut in (200, 503):
+            conn = FausseConnexion(self, statut=statut)
+            with self.desarmement_en_echec():
+                motif = self.motif_sans_exception_brute(conn)
+            self.assertEqual(motif, "relecteur_nettoyage", statut)
+            self.assertEqual(conn.fermetures, 1, statut)
+            self.assertIs(ro.signal.getsignal(ro.signal.SIGALRM), avant, statut)
+            ro.signal.setitimer(ro.signal.ITIMER_REAL, 0)
+
+    def test_restauration_en_echec_refus_code_et_connexion_fermee(self):
+        """signal.signal en échec à la restauration : aucune exception brute,
+        refus `relecteur_nettoyage`, minuterie désarmée, connexion fermée."""
+        avant = ro.signal.getsignal(ro.signal.SIGALRM)
+        self.proteger_le_processus(avant)
+        for statut in (200, 503):
+            conn = FausseConnexion(self, statut=statut)
+            with self.restauration_en_echec(avant):
+                motif = self.motif_sans_exception_brute(conn)
+            self.assertEqual(motif, "relecteur_nettoyage", statut)
+            self.assertEqual(conn.fermetures, 1, statut)
+            self.assertEqual(ro.signal.getitimer(ro.signal.ITIMER_REAL), (0.0, 0.0), statut)
+            ro.signal.signal(ro.signal.SIGALRM, avant)
+
+    def test_double_echec_du_nettoyage_connexion_quand_meme_fermee(self):
+        avant = ro.signal.getsignal(ro.signal.SIGALRM)
+        self.proteger_le_processus(avant)
+        conn = FausseConnexion(self)
+        with self.desarmement_en_echec(), self.restauration_en_echec(avant):
+            motif = self.motif_sans_exception_brute(conn)
+        self.assertEqual(motif, "relecteur_nettoyage")
+        self.assertEqual(conn.fermetures, 1)
+
+    def test_alarme_pendant_le_nettoyage_puis_desarmement_en_echec(self):
+        """Alarme au début du nettoyage, puis nettoyage repris dont le désarmement
+        échoue : l'échec du nettoyage prime sur l'échéance (`relecteur_nettoyage`)."""
+        avant = ro.signal.getsignal(ro.signal.SIGALRM)
+        self.proteger_le_processus(avant)
+        conn = FausseConnexion(self)
+        reel = ro._nettoyer
+        appels = []
+        def interrompu(m, etat):
+            appels.append(1)
+            if len(appels) == 1:
+                self.sonner()
+            return reel(m, etat)
+        with mock.patch.object(ro, "_nettoyer", interrompu), self.desarmement_en_echec():
+            motif = self.motif_sans_exception_brute(conn)
+        self.assertEqual(motif, "relecteur_nettoyage")
+        self.assertEqual(conn.fermetures, 1)
+        self.assertIs(ro.signal.getsignal(ro.signal.SIGALRM), avant)
+
     def test_erreur_inattendue_fermee(self):
         def cassee():
             raise RuntimeError("détail interne " + aide_v2.CLE)
@@ -288,7 +394,10 @@ class TestTransport(unittest.TestCase):
         env = dict(os.environ, HTTPS_PROXY="http://127.0.0.1:9", https_proxy="http://127.0.0.1:9",
                    ALL_PROXY="http://127.0.0.1:9")
         with mock.patch.dict(os.environ, env), mock.patch.object(ro.http.client, "HTTPSConnection", Capture):
-            ro.connexion_defaut()
+            try:
+                ro.connexion_defaut()
+            except revue.Refus as e:
+                self.fail(f"contexte TLS refusé : {e.motif}")
         (hote, port, timeout, ctx), = vues
         self.assertEqual((hote, port, timeout), ("api.openai.com", 443, ro.DELAI_SOCKET_S))
         self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)

@@ -70,6 +70,7 @@ class TestOracle(unittest.TestCase):
     def test_format_du_sujet_v2_distinct_du_v1(self):
         """Le sujet produit porte le format v2 du protocole, que l'oracle écrit en
         dur : un sujet au format v1 aurait le digest d'une attestation v1."""
+        self.assertEqual(revue2.FORMAT_SUJET, "olistic.confiance.sujet-revue/2")
         c = self.cand
         produit = aide_v2.sujet_v2_pour(c, c.c3)
         self.assertEqual(produit["format"], "olistic.confiance.sujet-revue/2")

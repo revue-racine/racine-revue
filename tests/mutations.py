@@ -6,11 +6,15 @@ Chaque mutation est associée à son test causal. Pour chacune :
      une seule exécution pour tous les tests causaux) ;
   2. la mutation est appliquée à une copie jetable du dépôt (son motif doit y
      figurer exactement une fois) ;
-  3. le test causal, et lui seul, est exécuté : il doit ÉCHOUER par un échec ou
-     une erreur de CE test — une erreur d'import ou de chargement est un
-     résultat invalide, pas une détection.
-Sortie 0 si toutes les mutations sont détectées causalement ; 1 sinon (survivante,
-motif introuvable, test causal absent ou en échec sans mutation, résultat invalide).
+  3. le test causal, et lui seul, est exécuté. Il n'y a DÉTECTION que si :
+     - ce test est en FAIL (échec d'assertion) ; ou
+     - ce test est en ERROR ET la mutation déclare l'exception attendue (6e
+       champ) ET la dernière ligne de la trace de ce test commence exactement par
+       elle. Un ERROR sans exception attendue, ou avec une autre exception, n'est
+       pas une détection (ERREUR NON ATTENDUE).
+     Tout échec d'import, de découverte, de setUp/tearDown, de setUpClass/
+     setUpModule, ou une exécution sans test, est INVALIDE.
+Sortie 0 si toutes les mutations sont détectées ; 1 sinon.
 
 L'épinglage des octets v1 (`test_v1_fige.py`) est exclu des copies mutées : chaque
 mutation doit être attrapée par un test de comportement, pas par une empreinte.
@@ -26,7 +30,7 @@ from pathlib import Path
 
 RACINE = Path(__file__).resolve().parent.parent
 
-# (nom, fichier, avant, après, test causal `module.Classe.methode`)
+# (nom, fichier, avant, après, test causal `module.Classe.methode`[, exception attendue si ERROR légitime])
 MUTATIONS = [
     # --- revue/1 : les 15 mutations historiques, inchangées
     ('login réintroduit dans le dédoublonnage', 'outils/revue.py',
@@ -44,11 +48,13 @@ MUTATIONS = [
     ('réservation sautée', 'outils/pont_p1.py',
      '    registre.reserver(request_id, liaison)  # point de non-retour',
      '    pass  # point de non-retour',
-     'test_pont_p1.TestPontP1.test_signer_deux_fois_refuse'),
+     'test_pont_p1.TestPontP1.test_signer_deux_fois_refuse',
+     'revue.Refus: reservation_substituee'),
     ('registre facultatif', 'outils/pont_p1.py',
      'if not isinstance(registre, registre_mod.RegistreConsommation):',
      'if registre is None:',
-     'test_pont_p1.TestPontP1.test_decision_forgee_impossible_a_injecter'),
+     'test_pont_p1.TestPontP1.test_decision_forgee_impossible_a_injecter',
+     "AttributeError: 'Decision' object has no attribute 'etat'"),
     ('contrôle de substitution sauté', 'outils/pont_p1.py',
      '        registre.controler_reservation(request_id, liaison)',
      '        pass',
@@ -60,7 +66,8 @@ MUTATIONS = [
     ('signature sans décision acceptée', 'outils/pont_p1.py',
      'if not decision.acceptee or decision["verdicts"].count("FAVORABLE") != 1 or "DEFAVORABLE" in decision["verdicts"]:',
      'if not decision.get("verdicts"):',
-     'test_pont_p1.TestPontP1.test_indetermine_ou_defavorable_refuses'),
+     'test_pont_p1.TestPontP1.test_indetermine_ou_defavorable_refuses',
+     "KeyError: 'predicat'"),
     ('repli sur un bundle en ligne', 'outils/verifier.py',
      'u = a.get("bundle_url") if isinstance(a, dict) else None',
      'u = (a.get("bundle_url") or "https://api.github.com/en-ligne") if isinstance(a, dict) else None',
@@ -72,7 +79,8 @@ MUTATIONS = [
     ('base reprise de la demande', 'outils/revue.py',
      'base, pointe = ancre["commit"], demande["pointe"]',
      'base, pointe = demande.get("base", ancre["commit"]), demande["pointe"]',
-     'test_sujet.TestSujet.test_base_glissee_dans_la_demande_ignoree'),
+     'test_sujet.TestSujet.test_base_glissee_dans_la_demande_ignoree',
+     'revue.Refus: ancre_divergente'),
     ("gitlink accepté dans l'arbre", 'outils/revue.py',
      'if typ == b"commit" or mode == b"160000":\n            raise Refus("gitlink_refuse")',
      'if False:\n            raise Refus("gitlink_refuse")',
@@ -111,12 +119,12 @@ MUTATIONS = [
      '            self.echue = True',
      'test_v2_transport.TestTransport.test_alarme_au_debut_du_nettoyage_apres_succes'),
     ('v2 : nettoyage interrompu non repris', 'outils/relecteur_openai.py',
-     '        _nettoyer(minuterie, etat)  # nettoyage peut-être interrompu',
-     '        pass  # nettoyage peut-être interrompu',
+     '        raise revue.Refus("relecteur_delai" if _nettoyer(minuterie, etat) else "relecteur_nettoyage") from None',
+     '        raise revue.Refus("relecteur_delai") from None',
      'test_v2_transport.TestTransport.test_alarme_au_debut_du_nettoyage_pendant_un_refus'),
     ("v2 : désarmement ne désactive pas d'abord", 'outils/relecteur_openai.py',
-     '        """Idempotent. Désactive d\'abord : une alarme pendant la suite est muette."""\n        self.active = False',
-     '        """Idempotent. Désactive d\'abord : une alarme pendant la suite est muette."""',
+     '        tentée même si la précédente a échoué ; un échec n\'est jamais un succès."""\n        self.active = False',
+     '        tentée même si la précédente a échoué ; un échec n\'est jamais un succès."""',
      'test_v2_transport.TestTransport.test_alarme_pendant_le_desarmement_muette'),
     ('v2 : échéance avalée non constatée après la réponse', 'outils/relecteur_openai.py',
      '        rep = conn.getresponse()\n        minuterie.verifier()',
@@ -130,6 +138,34 @@ MUTATIONS = [
      '            conn.close()\n        except Exception:  # noqa: BLE001\n            pass',
      '            pass\n        except Exception:  # noqa: BLE001\n            pass',
      'test_v2_transport.TestTransport.test_alarme_pendant_l_attente_de_la_reponse'),
+    ('v2 : échec de désarmement ignoré', 'outils/relecteur_openai.py',
+     '            except Exception:  # noqa: BLE001 — alarme peut-être encore programmée\n                ok = False',
+     '            except Exception:  # noqa: BLE001 — alarme peut-être encore programmée\n                pass',
+     'test_v2_transport.TestTransport.test_desarmement_en_echec_jamais_un_succes'),
+    ('v2 : restauration sautée après échec du désarmement', 'outils/relecteur_openai.py',
+     '            except Exception:  # noqa: BLE001 — alarme peut-être encore programmée\n                ok = False',
+     '            except Exception:  # noqa: BLE001 — alarme peut-être encore programmée\n                return False',
+     'test_v2_transport.TestTransport.test_desarmement_en_echec_jamais_un_succes'),
+    ('v2 : échec de restauration non protégé', 'outils/relecteur_openai.py',
+     '            except Exception:  # noqa: BLE001 — restauration impossible',
+     '            except ZeroDivisionError:  # noqa: BLE001 — restauration impossible',
+     'test_v2_transport.TestTransport.test_restauration_en_echec_refus_code_et_connexion_fermee'),
+    ('v2 : fermeture abandonnée après un échec de désarmement', 'outils/relecteur_openai.py',
+     '    ok = minuterie.desarmer()\n',
+     '    ok = minuterie.desarmer()\n    if not ok:\n        return False\n',
+     'test_v2_transport.TestTransport.test_double_echec_du_nettoyage_connexion_quand_meme_fermee'),
+    ('v2 : nettoyage en échec traité comme un succès', 'outils/relecteur_openai.py',
+     '        if not nettoye:  # jamais un succès après un nettoyage en échec',
+     '        if False:  # jamais un succès après un nettoyage en échec',
+     'test_v2_transport.TestTransport.test_restauration_en_echec_refus_code_et_connexion_fermee'),
+    ('v2 : nettoyage en échec masqué par le refus en cours', 'outils/relecteur_openai.py',
+     '            if not _nettoyer(minuterie, etat):  # nettoyage en échec : il prime sur le refus en cours',
+     '            if not _nettoyer(minuterie, etat) and False:  # nettoyage en échec : il prime sur le refus en cours',
+     'test_v2_transport.TestTransport.test_desarmement_en_echec_jamais_un_succes'),
+    ('v2 : échec du nettoyage après échéance ignoré', 'outils/relecteur_openai.py',
+     '        raise revue.Refus("relecteur_delai" if _nettoyer(minuterie, etat) else "relecteur_nettoyage") from None',
+     '        _nettoyer(minuterie, etat)\n        raise revue.Refus("relecteur_delai") from None',
+     'test_v2_transport.TestTransport.test_alarme_pendant_le_nettoyage_puis_desarmement_en_echec'),
     ('v2 : plafond de taille supprimé', 'outils/relecteur_openai.py',
      '            if total > taille_max:',
      '            if False:',
@@ -209,7 +245,8 @@ MUTATIONS = [
     ('v2 : acceptable forcé dans le prédicat', 'outils/revue2.py',
      '"acceptable": rel["acceptable"]}',
      '"acceptable": True}',
-     'test_v2_predicat.TestPredicatV2.test_produit_sous_acceptable_false_pour_chaque_verdict'),
+     'test_v2_predicat.TestPredicatV2.test_produit_sous_acceptable_false_pour_chaque_verdict',
+     'revue.Refus: predicat_invalide: acceptable diverge de la politique'),
     ('v2 : invariant acceptable du producteur supprimé', 'outils/revue2.py',
      '    if predicat["relecteur"]["acceptable"] is not r["acceptable"]:',
      '    if False:',
@@ -263,11 +300,50 @@ def lancer(dossier, tests):
     return r.returncode, r.stdout + r.stderr
 
 
-def echecs(sortie):
-    """Identifiants `module.Classe.methode` en échec ou en erreur ; et chargements ratés."""
-    vus = set(re.findall(r"^(?:FAIL|ERROR): \S+ \((\S+)\)", sortie, re.M))
-    rates = {v for v in vus if v.startswith("unittest.loader._FailedTest") or "_FailedTest" in v}
-    return vus - rates, rates
+SEPARATEUR = "=" * 70
+TRAIT = "-" * 70
+FIXTURES = ("_FailedTest", "setUpClass", "setUpModule", "tearDownClass", "tearDownModule")
+
+
+def blocs(sortie):
+    """[(nature FAIL|ERROR, identifiant, trace)] pour chaque test en échec."""
+    out = []
+    for morceau in sortie.split(SEPARATEUR)[1:]:
+        lignes = morceau.strip("\n").splitlines()
+        m = re.match(r"^(FAIL|ERROR): \S+ \((\S+)\)", lignes[0]) if lignes else None
+        if not m:
+            continue
+        trace = "\n".join(lignes[1:]).split(TRAIT, 2)
+        out.append((m.group(1), m.group(2), trace[1] if len(trace) > 1 else ""))
+    return out
+
+
+def derniere_ligne(trace):
+    lignes = [l for l in trace.splitlines() if l.strip()]
+    return lignes[-1] if lignes else ""
+
+
+def classer(rc, sortie, causal, attendu):
+    if not re.search(r"^Ran [1-9]\d* tests?", sortie, re.M):
+        return "INVALIDE  ", "aucun test exécuté"
+    tous = blocs(sortie)
+    for nature, ident, trace in tous:
+        if any(f in ident for f in FIXTURES):
+            return "INVALIDE  ", f"fixture ou chargement : {ident}"
+    propres = [(n, tr) for n, i, tr in tous if i == causal]
+    for _, trace in propres:
+        if re.search(r", in (setUp|tearDown)\b", trace):
+            return "INVALIDE  ", "échec dans setUp/tearDown"
+    if any(n == "FAIL" for n, _ in propres):
+        return "détectée  ", "FAIL"
+    erreurs = [derniere_ligne(tr) for n, tr in propres if n == "ERROR"]
+    if erreurs:
+        if attendu and all(e.startswith(attendu) for e in erreurs):
+            return "détectée  ", f"ERROR attendue : {attendu}"
+        return "ERREUR NON ATTENDUE", erreurs[0][:120]
+    if rc != 0:
+        return "NON CAUSALE", "échec hors du test causal"
+    return "SURVIVANTE", ""
 
 
 def main():
@@ -275,13 +351,15 @@ def main():
     with tempfile.TemporaryDirectory(prefix="mutation-") as tmp:
         copier(Path(tmp) / "b")
         rc, sortie = lancer(Path(tmp) / "b", causaux)
-    if rc != 0 or "Ran %d test" % len(causaux) not in sortie:
+    if rc != 0 or not re.search(r"^Ran %d tests?" % len(causaux), sortie, re.M):
         print("tests causaux en échec, absents ou dupliqués sans mutation : harnais inutilisable")
         print(sortie[-2000:])
         return 1
     print(f"contrôle préalable : {len(causaux)} tests causaux verts sans mutation")
     mauvaises = 0
-    for nom, fichier, avant, apres, causal in MUTATIONS:
+    for mutation in MUTATIONS:
+        nom, fichier, avant, apres, causal = mutation[:5]
+        attendu = mutation[5] if len(mutation) > 5 else None
         with tempfile.TemporaryDirectory(prefix="mutation-") as tmp:
             copie = Path(tmp) / "b"
             copier(copie)
@@ -293,17 +371,9 @@ def main():
                 continue
             cible.write_text(texte.replace(avant, apres), "utf-8")
             rc, sortie = lancer(copie, [causal])
-        en_echec, rates = echecs(sortie)
-        if rates:
-            etat = "INVALIDE  "
-        elif rc != 0 and causal in en_echec:
-            etat = "détectée  "
-        elif rc != 0:
-            etat = "NON CAUSALE"
-        else:
-            etat = "SURVIVANTE"
+        etat, detail = classer(rc, sortie, causal, attendu)
         mauvaises += etat != "détectée  "
-        print(f"{etat}  {nom}  <- {causal}")
+        print(f"{etat}  {nom}  <- {causal}  [{detail}]")
     print(f"{len(MUTATIONS) - mauvaises}/{len(MUTATIONS)} mutations détectées par leur test causal")
     return 1 if mauvaises else 0
 

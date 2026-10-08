@@ -1,9 +1,20 @@
 # Racine de confiance — revue indépendante
 
 Ce dépôt produit des **attestations de revue** signées par GitHub Actions
-(Sigstore, sans clé privée gérée ici) : « le protocole `revue/1` a été appliqué
+(Sigstore, sans clé privée gérée ici) : « le protocole de revue a été appliqué
 à exactement ce commit et à exactement cet arbre, et voici le verdict
-normalisé ». Il est public pour que n'importe qui puisse vérifier une
+normalisé ».
+
+- **`revue/2`** est le producteur actif prévu **après la fusion du Lot 2** :
+  relecteur `openai-responses`, politique génération 2.
+- **`revue/1`** est conservé, figé octet pour octet, **pour la vérification
+  historique** des attestations v1 déjà émises ; il ne produit plus rien après
+  cette fusion.
+- **Canari sans pouvoir** : sous la génération 2, le relecteur v2 n'est pas
+  acceptable. Une attestation v2 est consultative, quel que soit son verdict : elle
+  n'autorise, n'approuve et ne débloque rien, et aucun pont P1 ne l'accepte.
+
+Il est public pour que n'importe qui puisse vérifier une
 attestation, et pour bénéficier des attestations d'artefacts de GitHub, réservées
 aux dépôts publics hors offre Enterprise.
 

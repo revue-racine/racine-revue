@@ -106,7 +106,12 @@ ou d'ancres, une autre demande, ou un instant incohérent.
   `main`, attaché au seul job de relecture ; jamais dans un prompt, une sortie,
   un message d'erreur ni un journal.
 - Délai total borné par une minuterie murale ; réponse plafonnée en octets ;
-  `Content-Encoding` autre que `identity` refusé.
+  `Content-Encoding` autre que `identity` refusé. La minuterie borne l'échange
+  HTTP jusqu'au **début** du désarmement ; le désarmement, la restauration du
+  gestionnaire et la fermeture de la connexion qui suivent ne sont pas bornés par
+  elle. Chacune de ces opérations est tentée même si une précédente a échoué ; un
+  échec de désarmement ou de restauration fait refuser (`relecteur_nettoyage`),
+  jamais réussir.
 
 ### 5.2 Enveloppe fournisseur et sortie du relecteur
 
@@ -120,7 +125,7 @@ tout.
 
 **Toute enveloppe invalide fait refuser la demande : aucun prédicat, aucune
 attestation.** Codes : `relecteur_cle_absente`, `relecteur_cle_invalide`,
-`relecteur_minuterie`, `relecteur_configuration`,
+`relecteur_minuterie`, `relecteur_nettoyage`, `relecteur_configuration`,
 `relecteur_connexion`, `relecteur_delai`, `relecteur_redirection`,
 `relecteur_http_client`, `relecteur_quota`, `relecteur_http_serveur`,
 `relecteur_encodage`, `relecteur_trop_grand`, `relecteur_enveloppe_illisible`,
@@ -164,6 +169,17 @@ l'empreinte exacte est épinglée, la génération de cette politique, le schém
 `schemas/attestation-revue-v2.schema.json`, le sujet et le nom de sujet v2, et
 l'exigence supplémentaire `relecteur.acceptable` égal à la valeur de la
 politique. Un relecteur non acceptable fait rejeter (`relecteur_non_acceptable`).
+
+**Ordre normatif.** Pour chaque résultat, tous les contrôles de validité, de
+provenance, de modèle, de cohérence et de fraîcheur — certificat, énoncé in-toto,
+type et schéma du prédicat, digest et nom du sujet, sujet recalculé, empreintes de
+protocole et de politique, génération, motif, relecteur actif, modèle autorisé,
+horodatage vérifié, coupure, validité, cohérence de l'instant, égalité de
+`relecteur.acceptable` avec la politique — **précèdent** le rejet
+`relecteur_non_acceptable`. Ce rejet n'est donc rendu que pour une attestation par
+ailleurs entièrement valide : sous une politique où le relecteur n'est pas
+acceptable (canari), toute autre anomalie est rapportée par son propre motif et
+n'est jamais masquée.
 
 Référence exécutable : `outils/verifier2.py`, vérificateur **candidat**, distinct du
 paquet consommateur v1, qu'il ne remplace pas.
