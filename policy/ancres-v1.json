@@ -3,8 +3,8 @@
   "ancres": [
     {
       "alias": "auto-test",
-      "commit": null,
-      "objet_sha256": null
+      "commit": "048378841b1380c3b5ac979738a2bb473ae6a8e7",
+      "objet_sha256": "65da98b3f95fd7602db771fca831fd37cdbcddd894fe449cc5dd70ea75b39a18"
     }
   ]
 }
