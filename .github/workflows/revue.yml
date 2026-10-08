@@ -1,4 +1,5 @@
 # Workflow de confiance — protocole revue/1 (protocol/revue-v1.md).
+# Auto-test activation : modification documentaire depuis un fork.
 #
 # Déclencheur unique : ouverture d'une issue. GitHub exécute toujours ce
 # fichier depuis la branche par défaut protégée ; aucune branche, aucun fork,
