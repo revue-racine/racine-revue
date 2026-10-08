@@ -140,12 +140,70 @@ l'hôte. Le noter dans le gestionnaire de secrets.
 
 | Champ | Valeur |
 |---|---|
-| Date (UTC) | |
-| sha256 de l'archive du bundle reçue | |
-| `<administrateur>` / identifiant numérique | |
-| `<depot>` / identifiant numérique | |
-| `<operateur>` / identifiant numérique | |
-| SHA du commit de bootstrap | |
-| Identifiants des rulesets, `bypass_actors` | |
-| Activation : essais 1 à 9 | |
-| Écarts constatés et décisions | |
+| Date (UTC) | 2026-10-08 |
+| sha256 de l'archive du bundle reçue | `2d5145a27d6351dfee55824336ee52305ced4932aa8d5baa749f00752a27176e` |
+| `<administrateur>` / identifiant numérique | `revue-racine` / `339338245` |
+| `<depot>` / identifiant numérique | `revue-racine/racine-revue` / `1409404929` |
+| `<operateur>` / identifiant numérique | `miguelfromba` / `241122414` |
+| SHA du commit de bootstrap | `3bf64c3c483762601c725067b30bb0a8a868fe0d` |
+| Identifiants des rulesets, `bypass_actors` | `etiquettes-immuables` = `24684532`, `bypass_actors=[]` ; `main-protege` = `24684531`, `bypass_actors=[]` |
+| Activation : essais 1 à 9 | **PASS — 9/9.** Voir détails ci-dessous. |
+| Écarts constatés et décisions | Bootstrap initial : bundle `d8429419d7b0a03a53b81fa6cadde93905ddbd90eff320d9e14766be7beb824e`, commit `3bf64c3c483762601c725067b30bb0a8a868fe0d`. Un défaut CI de contrôle de `.git/` a nécessité une exception bornée de bootstrap avant protection : seul `tests/test_bundle.py` a changé ; bundle corrigé/final `2d5145a27d6351dfee55824336ee52305ced4932aa8d5baa749f00752a27176e`, commit `048378841b1380c3b5ac979738a2bb473ae6a8e7`, ensuite étiqueté `racine-v1`. Deux écarts supplémentaires révélés par l'activation ont été corrigés par PR protégées : URL réelle de bundle `*.blob.core.windows.net` (PR #3, merge `03e6d20ff8e63c4ee8c059f185483f135df53897`) ; procédure de rejeu corrigée en « nouvelle issue avec le même `request_id` » (PR #4, merge `91c1a6469ce9f2ea29d2345d12b8eff8e67cd59f`). Aucun affaiblissement du modèle de confiance. |
+
+### Activation — détail des 9 essais
+
+1. Demande valide : attestation `INDETERMINE`, run `37707994499`, sujet `9b61439e820c1f6d944335d46508dec778fdb589063c7aebc9baaa82a0f8e0e1`.
+2. Vérification indépendante : signature/provenance valides ; usage autorisant refusé avec `relecteur_non_acceptable`.
+3. Rejeu du même `request_id` dans une nouvelle issue (#5) : `request_id_deja_utilise`, aucune nouvelle attestation, run `37712015114`.
+4. Modification d'un octet du prédicat signé : `gh attestation verify` échoue (`EXIT=1`).
+5. Demandeur non autorisé (#6) : `demandeur_non_autorise`, signature `skipped`, run `37712616580`.
+6. Demande invalide avec champ `verdict` (#7) : `demande_invalide`, signature `skipped`, run `37712868534`.
+7. Pointe inexistante (#8) : `objet_introuvable`, signature `skipped`, run `37713061804`.
+8. Opérateur O : push refusé `403`, `workflow_dispatch` refusé `403`, ajout collaborateur et écriture ruleset refusés `404`.
+9. PR de fork #9 modifiant `revue.yml` : seul `controles` exécuté après approbation, run `37713709313` `success`, aucun run `revue`, PR fermée non fusionnée.
+
+### Contrôles finaux de configuration du dépôt
+
+    depot:
+      id: 1409404929
+      owner_id: 339338245
+      visibility: public
+      default_branch: main
+      has_issues: true
+      has_wiki: false
+
+    rulesets:
+      - id: 24684532
+        name: etiquettes-immuables
+        enforcement: active
+        bypass_actors: []
+      - id: 24684531
+        name: main-protege
+        enforcement: active
+        bypass_actors: []
+
+    collaborators:
+      - revue-racine
+
+    deploy_keys: 0
+    hooks: 0
+    environments: 0
+    actions_secrets: 0
+    actions_variables: 0
+    actions_runners: 0
+
+    actions_permissions:
+      enabled: true
+      allowed_actions: selected
+      sha_pinning_required: true
+
+    selected_actions:
+      github_owned_allowed: false
+      verified_allowed: false
+      patterns_allowed:
+        - actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        - actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+
+    workflow_permissions:
+      default_workflow_permissions: read
+      can_approve_pull_request_reviews: false
