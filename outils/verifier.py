@@ -37,7 +37,7 @@ import snappy_bloc  # noqa: E402
 
 EMETTEUR_OIDC = "https://token.actions.githubusercontent.com"
 API_GITHUB = "https://api.github.com"
-SUFFIXES_HOTES_BUNDLE = (".github.com", ".githubusercontent.com")
+SUFFIXES_HOTES_BUNDLE = (".github.com", ".githubusercontent.com", ".blob.core.windows.net")
 BUNDLE_COMPRESSE_MAX = 2 * 1024 * 1024
 BUNDLE_MAX = 8 * 1024 * 1024
 PAGES_MAX = 1000  # garde-fou contre une pagination sans fin, pas un seuil de décision

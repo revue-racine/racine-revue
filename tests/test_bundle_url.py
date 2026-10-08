@@ -14,6 +14,7 @@ DIGEST = "d" * 64
 PREFIXE = f"https://api.github.com/repos/{aide.PROPRIETAIRE}/{aide.DEPOT}/attestations/"
 BUNDLE = json.dumps({"mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json", "x": 1}).encode()
 URL = "https://tmp-attestations.githubusercontent.com/b/1"
+URL_AZURE = "https://tmaproduction.blob.core.windows.net/attestations/1409404929/bundle.json.sn"
 
 
 def page(attestations, suivant=None):
@@ -48,6 +49,13 @@ class TestListe(unittest.TestCase):
                             p2: page([{"bundle_url": URL + "2"}])})
         self.assertEqual(urls, [URL, URL + "2"])
 
+    def test_bundle_url_azure_valide(self):
+        p1 = f"{PREFIXE}sha256:{DIGEST}?per_page=100"
+        self.assertEqual(
+            self.lister({p1: page([{"bundle_url": URL_AZURE}])}),
+            [URL_AZURE],
+        )
+
     def test_aucune_attestation(self):
         self.assertEqual(self.lister({}), [])
 
@@ -59,7 +67,9 @@ class TestListe(unittest.TestCase):
     def test_bundle_url_inattendue(self):
         p1 = f"{PREFIXE}sha256:{DIGEST}?per_page=100"
         for u in ("http://tmp-attestations.githubusercontent.com/b/1", "https://exemple.invalid/b/1",
-                  "https://githubusercontent.com.exemple.invalid/b", "https://u:p" + "@" + "api.github.com/b",
+                  "https://githubusercontent.com.exemple.invalid/b",
+                  "https://tmaproduction.blob.core.windows.net.exemple.invalid/b",
+                  "https://u:p" + "@" + "api.github.com/b",
                   "https://api.github.com:8443/b", "file:///etc/passwd", 42):
             self.assertEqual(self.motif({p1: page([{"bundle_url": u}])}), "bundle_url_invalide", u)
 
