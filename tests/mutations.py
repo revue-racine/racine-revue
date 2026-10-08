@@ -53,6 +53,72 @@ MUTATIONS = [
     ("relecteur non acceptable accepté", "outils/verifier.py", 'if not rel["acceptable"]:', "if False:"),
     ("coupure ignorée", "outils/verifier.py", 'if t < revue.instant_utc(f["coupure"]):', "if False:"),
     ("_type in-toto ignoré", "outils/verifier.py", "if enonce.get(\"_type\") != TYPE_INTOTO:", "if False:"),
+    # revue/2 — relecteur openai-responses : transport
+    ("v2 : minuterie murale supprimée", "outils/relecteur_openai.py",
+     "                signal.setitimer(signal.ITIMER_REAL, delai_total)", "                pass"),
+    ("v2 : format de clé non vérifié", "outils/relecteur_openai.py",
+     "    if FORMAT_CLE.fullmatch(cle) is None:", "    if False:"),
+    ("v2 : échec de la minuterie non codé", "outils/relecteur_openai.py",
+     '                raise revue.Refus("relecteur_minuterie")', "                raise"),
+    ("v2 : plafond de taille supprimé", "outils/relecteur_openai.py",
+     "                if total > taille_max:", "                if False:"),
+    ("v2 : redirection traitée comme un succès", "outils/relecteur_openai.py",
+     "            if statut != 200:", "            if statut >= 400:"),
+    ("v2 : Content-Encoding ignoré", "outils/relecteur_openai.py",
+     '            if (rep.getheader("Content-Encoding") or "identity").strip().lower() != "identity":',
+     "            if False:"),
+    ("v2 : clé reprise dans une erreur", "outils/relecteur_openai.py",
+     '            raise revue.Refus("relecteur_connexion")', '            raise revue.Refus("relecteur_connexion", cle)'),
+    ("v2 : TLS non vérifié", "outils/relecteur_openai.py",
+     "    ctx = ssl.create_default_context()", "    ctx = ssl._create_unverified_context()"),
+    # revue/2 : enveloppe
+    ("v2 : contrôle du modèle supprimé", "outils/relecteur_openai.py",
+     '    if env.get("model") != modele:', "    if False:"),
+    ("v2 : statut incomplet accepté", "outils/relecteur_openai.py",
+     '    if env.get("status") != "completed":', '    if env.get("status") not in ("completed", "incomplete"):'),
+    ("v2 : appel d'outil accepté", "outils/relecteur_openai.py",
+     '        if t not in ("message", "reasoning"):', '        if t not in ("message", "reasoning", "function_call"):'),
+    ("v2 : refus du modèle accepté", "outils/relecteur_openai.py",
+     '            if tp == "refusal":', "            if False:"),
+    ("v2 : plusieurs textes acceptés", "outils/relecteur_openai.py",
+     "    if len(textes) != 1:", "    if not textes:"),
+    ("v2 : erreur d'enveloppe convertie en INDETERMINE", "outils/relecteur_openai.py",
+     "    return analyser_enveloppe(appeler(cle, corps, connexion), modele)",
+     "    try:\n        return analyser_enveloppe(appeler(cle, corps, connexion), modele)\n"
+     "    except revue.Refus:\n        return b\"\""),
+    # revue/2 : requête et projection
+    ("v2 : stockage fournisseur activé", "outils/relecteur_openai.py",
+     '        "store": False,', '        "store": True,'),
+    ("v2 : outil déclaré dans la requête", "outils/relecteur_openai.py",
+     '        "store": False,', '        "store": False, "tools": [{"type": "web_search"}],'),
+    ("v2 : borne d'encadrement constante", "outils/relecteur_openai.py",
+     '    borne = "DIFF-" + revue.sha256_hex(diff)', '    borne = "DIFF"'),
+    ("v2 : minLength conservé dans la projection", "outils/relecteur_openai.py",
+     'SUPPRIMES = frozenset({"$schema", "$id", "title", "description", "minLength", "maxLength"})',
+     'SUPPRIMES = frozenset({"$schema", "$id", "title", "description", "maxLength"})\n'
+     'CONSERVES = CONSERVES | {"minLength"}'),
+    # revue/2 : producteur
+    ("v2 : sujet au format v1", "outils/revue2.py",
+     'FORMAT_SUJET = "olistic.confiance.sujet-revue/2"', 'FORMAT_SUJET = "olistic.confiance.sujet-revue/1"'),
+    ("v2 : clé non exigée avant tout calcul", "outils/revue2.py", "            if not cle:", "            if False:"),
+    ("v2 : clé laissée dans l'environnement", "outils/revue2.py",
+     "        cle = os.environ.pop(VARIABLE_CLE, \"\")", "        cle = os.environ.get(VARIABLE_CLE, \"\")"),
+    ("v2 : acceptable forcé dans le prédicat", "outils/revue2.py",
+     '"acceptable": rel["acceptable"]}', '"acceptable": True}'),
+    ("v2 : invariant acceptable du producteur supprimé", "outils/revue2.py",
+     '    if predicat["relecteur"]["acceptable"] is not r["acceptable"]:', "    if False:"),
+    ("v2 : portée consultative retirée de la réponse", "outils/revue2.py",
+     '    if not rel["acceptable"]:', "    if False:"),
+    # revue/2 : vérificateur candidat
+    ("v2 : relecteur non acceptable accepté", "outils/verifier2.py", '    if not rel["acceptable"]:', "    if False:"),
+    ("v2 : acceptable lu dans le prédicat", "outils/verifier2.py",
+     '    if predicat["relecteur"]["acceptable"] is not rel["acceptable"]:', "    if False:"),
+    # revue/2 : workflow
+    ("v2 : secret exposé au job de signature", ".github/workflows/revue.yml",
+     "          PREDICAT: ${{ needs.revue.outputs.predicat }}",
+     "          PREDICAT: ${{ needs.revue.outputs.predicat }}\n          CLE_RELECTEUR: ${{ secrets.CLE_RELECTEUR_OPENAI }}"),
+    ("v2 : producteur v1 rappelé par le workflow", ".github/workflows/revue.yml",
+     "run: python3 -I outils/revue2.py preparer", "run: python3 -I outils/revue.py preparer"),
 ]
 
 
@@ -70,7 +136,9 @@ def main():
     for nom, fichier, avant, apres in MUTATIONS:
         with tempfile.TemporaryDirectory(prefix="mutation-") as tmp:
             copie = Path(tmp) / "b"
-            shutil.copytree(RACINE, copie, ignore=shutil.ignore_patterns("__pycache__"))
+            # L'épinglage des octets v1 (test_v1_fige) attraperait toute mutation du v1 :
+            # il est exclu ici pour que chaque mutation soit attrapée par un test de comportement.
+            shutil.copytree(RACINE, copie, ignore=shutil.ignore_patterns("__pycache__", ".git", "test_v1_fige.py"))
             cible = copie / fichier
             texte = cible.read_text("utf-8")
             if texte.count(avant) != 1:

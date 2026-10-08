@@ -1,0 +1,191 @@
+"""Transport fail-closed du relecteur, contre un serveur 127.0.0.1 : aucune
+redirection, aucune reprise, délai total, plafond de taille, encodage, TLS,
+aucun mandataire hérité. Aucun appel externe."""
+import http.client
+import os
+import ssl
+import time
+import unittest
+from unittest import mock
+
+import aide  # noqa: F401
+from aide import revue
+import aide_v2
+from aide_v2 import ServeurLocal
+import relecteur_openai as ro
+
+
+class TestTransport(unittest.TestCase):
+    def motif(self, serveur, **kw):
+        with self.assertRaises(revue.Refus) as cm:
+            ro.appeler(aide_v2.CLE, b"{}", serveur.connexion(), **kw)
+        return cm.exception.motif
+
+    def test_succes_rend_le_corps_exact(self):
+        with ServeurLocal() as s:
+            self.assertEqual(ro.appeler(aide_v2.CLE, b"{}", s.connexion()), aide_v2.enveloppe())
+            self.assertEqual(s.connexions, 1)
+            chemin, entetes, corps = s.requetes[0]
+            self.assertEqual(chemin, "/v1/responses")
+            self.assertEqual(entetes["Authorization"], "Bearer " + aide_v2.CLE)
+            self.assertEqual(entetes["Accept-Encoding"], "identity")
+            self.assertEqual(corps, b"{}")
+
+    def test_redirection_jamais_suivie(self):
+        with ServeurLocal("redirection") as s:
+            self.assertEqual(self.motif(s), "relecteur_redirection")
+            self.assertEqual(s.connexions, 1)
+
+    def test_aucune_reprise(self):
+        for mode, motif in (("quota", "relecteur_quota"), ("serveur", "relecteur_http_serveur"),
+                            ("client", "relecteur_http_client")):
+            with ServeurLocal(mode) as s:
+                self.assertEqual(self.motif(s), motif)
+                self.assertEqual(s.connexions, 1, mode)
+
+    def test_delai_total_mural_contre_un_serveur_au_compte_gouttes(self):
+        """Chaque octet arrive avant le délai de socket : seule la minuterie
+        murale borne l'appel."""
+        with ServeurLocal("goutte") as s:
+            debut = time.monotonic()
+            self.assertEqual(self.motif(s, delai_total=1.0), "relecteur_delai")
+            self.assertLess(time.monotonic() - debut, 3.0)
+
+    def test_delai_total_contre_un_serveur_muet(self):
+        with ServeurLocal("silence") as s:
+            debut = time.monotonic()
+            with self.assertRaises(revue.Refus) as cm:
+                ro.appeler(aide_v2.CLE, b"{}", s.connexion(timeout=20), delai_total=1.0)
+            self.assertEqual(cm.exception.motif, "relecteur_delai")
+            self.assertLess(time.monotonic() - debut, 3.0)
+
+    def test_minuterie_toujours_desarmee(self):
+        with ServeurLocal() as s:
+            ro.appeler(aide_v2.CLE, b"{}", s.connexion())
+        self.assertEqual(ro.signal.getitimer(ro.signal.ITIMER_REAL), (0.0, 0.0))
+        with ServeurLocal("serveur") as s:
+            self.motif(s)
+        self.assertEqual(ro.signal.getitimer(ro.signal.ITIMER_REAL), (0.0, 0.0))
+
+    def test_taille_plafonnee_en_octets(self):
+        with ServeurLocal("gros", taille=1001) as s:
+            self.assertEqual(self.motif(s, taille_max=1000), "relecteur_trop_grand")
+        with ServeurLocal("gros", taille=1000) as s:
+            self.assertEqual(len(ro.appeler(aide_v2.CLE, b"{}", s.connexion(), taille_max=1000)), 1000)
+
+    def test_encodage_compresse_refuse(self):
+        with ServeurLocal("gzip") as s:
+            self.assertEqual(self.motif(s), "relecteur_encodage")
+
+    def test_connexion_impossible(self):
+        def refusee():
+            return http.client.HTTPConnection("127.0.0.1", 1, timeout=2)
+        with self.assertRaises(revue.Refus) as cm:
+            ro.appeler(aide_v2.CLE, b"{}", refusee)
+        self.assertEqual(cm.exception.motif, "relecteur_connexion")
+        self.assertNotIn(aide_v2.CLE, repr(cm.exception) + str(cm.exception.args))
+
+    def test_cle_absente_aucune_connexion(self):
+        with ServeurLocal() as s:
+            for cle in ("", None):
+                with self.assertRaises(revue.Refus) as cm:
+                    ro.appeler(cle, b"{}", s.connexion())
+                self.assertEqual(cm.exception.motif, "relecteur_cle_absente")
+            self.assertEqual(s.connexions, 0)
+
+    def test_cle_hors_format_refusee_avant_tout_en_tete(self):
+        """Une clé hors format n'atteint jamais http.client (dont les erreurs
+        d'en-tête reprennent la valeur) : refus codé, aucune connexion."""
+        valide = aide_v2.CLE
+        with ServeurLocal() as s:
+            for cle in (valide + "\n", valide + "\r\nX-Fuite: 1", valide + " ", "court", "é" * 30,
+                        valide + "\x00", "a" * 513):
+                with self.assertRaises(revue.Refus) as cm:
+                    ro.appeler(cle, b"{}", s.connexion())
+                e = cm.exception
+                self.assertEqual(e.motif, "relecteur_cle_invalide", repr(cle))
+                self.assertIsNone(e.__context__)
+                self.assertNotIn(cle.strip(), repr(e) + str(e.args))
+            self.assertEqual(s.connexions, 0)
+
+    def test_minuterie_indisponible_refus_code_sans_connexion(self):
+        """Hors du fil principal, `signal` est indisponible : refus codé
+        `relecteur_minuterie`, aucune connexion, gestionnaire inchangé."""
+        import threading
+        avant = ro.signal.getsignal(ro.signal.SIGALRM)
+        resultat = []
+        with ServeurLocal() as s:
+            def cible():
+                try:
+                    ro.appeler(aide_v2.CLE, b"{}", s.connexion())
+                    resultat.append("aucun refus")
+                except revue.Refus as e:
+                    resultat.append(e.motif)
+                except BaseException as e:  # noqa: BLE001
+                    resultat.append(type(e).__name__)
+            fil = threading.Thread(target=cible)
+            fil.start()
+            fil.join(10)
+            self.assertEqual(s.connexions, 0)
+        self.assertEqual(resultat, ["relecteur_minuterie"])
+        self.assertIs(ro.signal.getsignal(ro.signal.SIGALRM), avant)
+
+    def test_minuterie_en_echec_au_premier_armement(self):
+        avant = ro.signal.getsignal(ro.signal.SIGALRM)
+        with ServeurLocal() as s, mock.patch.object(ro.signal, "setitimer",
+                                                    side_effect=ro.signal.ItimerError("indisponible")):
+            with self.assertRaises(revue.Refus) as cm:
+                ro.appeler(aide_v2.CLE, b"{}", s.connexion())
+            self.assertEqual(s.connexions, 0)
+        self.assertEqual(cm.exception.motif, "relecteur_minuterie")
+        self.assertIs(ro.signal.getsignal(ro.signal.SIGALRM), avant)
+
+    def test_gestionnaire_precedent_restaure(self):
+        avant = ro.signal.getsignal(ro.signal.SIGALRM)
+        for mode in ("ok", "serveur"):
+            with ServeurLocal(mode) as s:
+                try:
+                    ro.appeler(aide_v2.CLE, b"{}", s.connexion())
+                except revue.Refus:
+                    pass
+            self.assertIs(ro.signal.getsignal(ro.signal.SIGALRM), avant, mode)
+
+    def test_erreur_inattendue_fermee(self):
+        def cassee():
+            raise RuntimeError("détail interne " + aide_v2.CLE)
+        with self.assertRaises(revue.Refus) as cm:
+            ro.appeler(aide_v2.CLE, b"{}", cassee)
+        self.assertEqual(cm.exception.motif, "relecteur_interne")
+        self.assertNotIn(aide_v2.CLE, str(cm.exception))
+
+    def test_connexion_par_defaut_directe_tls_verifie_sans_mandataire(self):
+        """Sans réseau : on capture la construction de la connexion par défaut."""
+        vues = []
+
+        class Capture:
+            def __init__(self, hote, port, timeout, context):
+                vues.append((hote, port, timeout, context))
+
+            def set_tunnel(self, *a, **k):
+                raise AssertionError("aucun tunnel de mandataire")
+
+        env = dict(os.environ, HTTPS_PROXY="http://127.0.0.1:9", https_proxy="http://127.0.0.1:9",
+                   ALL_PROXY="http://127.0.0.1:9")
+        with mock.patch.dict(os.environ, env), mock.patch.object(ro.http.client, "HTTPSConnection", Capture):
+            ro.connexion_defaut()
+        (hote, port, timeout, ctx), = vues
+        self.assertEqual((hote, port, timeout), ("api.openai.com", 443, ro.DELAI_SOCKET_S))
+        self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(ctx.check_hostname)
+        self.assertGreaterEqual(ctx.minimum_version, ssl.TLSVersion.TLSv1_2)
+
+    def test_aucun_module_de_mandataire_ni_de_redirection(self):
+        texte = (aide.RACINE / "outils/relecteur_openai.py").read_text("utf-8")
+        for interdit in ("urllib", "requests", "getproxies", "_PROXY", "set_tunnel", "HTTPRedirectHandler"):
+            self.assertNotIn(interdit, texte, interdit)
+        self.assertEqual(ro.HOTE, "api.openai.com")
+        self.assertEqual(ro.CHEMIN, "/v1/responses")
+
+
+if __name__ == "__main__":
+    unittest.main()

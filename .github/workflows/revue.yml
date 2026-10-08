@@ -1,4 +1,6 @@
-# Workflow de confiance — protocole revue/1 (protocol/revue-v1.md).
+# Workflow de confiance — protocole revue/2 (protocol/revue-v2.md).
+# Il ne produit plus que des attestations v2 ; les attestations revue/1 déjà
+# émises restent vérifiables par outils/verifier.py sous la politique v1.
 #
 # Déclencheur unique : ouverture d'une issue. GitHub exécute toujours ce
 # fichier depuis la branche par défaut protégée ; aucune branche, aucun fork,
@@ -6,14 +8,17 @@
 #
 # Invariants (vérifiés par tests/test_workflow.py) :
 # - aucune expression ${{ }} dans un bloc run ; les données d'événement ne
-#   passent que par $GITHUB_EVENT_PATH, lu par outils/revue.py ;
+#   passent que par $GITHUB_EVENT_PATH, lu par outils/revue2.py ;
 # - permissions vides au niveau du workflow, minimales par job ;
 # - seul le job `attestation` détient id-token et attestations, et il ne
 #   traite aucun contenu candidat autrement que par git plumbing ;
 # - aucune action tierce non épinglée par SHA ; aucun artifact téléversé ;
 # - la base de revue est l'ancre gouvernée (policy/ancres-v1.json), jamais
 #   une donnée de la demande ;
-# - Lot 1 : aucun secret référencé, aucun pont P1 exécuté.
+# - un seul secret, la clé du relecteur, dans le seul step `revue` du job
+#   `revue`, attaché à l'environnement `relecteur-openai` restreint à `main`
+#   (créé et protégé par l'administrateur AVANT toute activation) ; aucun pont
+#   P1 exécuté.
 name: revue
 
 on:
@@ -48,7 +53,7 @@ jobs:
       - id: admission
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 -I outils/revue.py admission --evenement "$GITHUB_EVENT_PATH" --sortie "$GITHUB_OUTPUT"
+        run: python3 -I outils/revue2.py admission --evenement "$GITHUB_EVENT_PATH" --sortie "$GITHUB_OUTPUT"
 
   revue:
     name: Sujet recalculé et relecture
@@ -56,6 +61,10 @@ jobs:
     if: needs.admission.outputs.admis == 'oui'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    environment: relecteur-openai
+    concurrency:
+      group: revue-relecteur
+      cancel-in-progress: false
     permissions:
       contents: read
     outputs:
@@ -69,7 +78,8 @@ jobs:
       - id: revue
         env:
           ADMIS: ${{ needs.admission.outputs.demande }}
-        run: python3 -I outils/revue.py revue --travail "$RUNNER_TEMP/candidat.git" --sortie "$GITHUB_OUTPUT"
+          CLE_RELECTEUR: ${{ secrets.CLE_RELECTEUR_OPENAI }}
+        run: python3 -I outils/revue2.py revue --travail "$RUNNER_TEMP/candidat.git" --sortie "$GITHUB_OUTPUT"
 
   attestation:
     name: Contrôle indépendant et signature
@@ -93,13 +103,13 @@ jobs:
         env:
           ADMIS: ${{ needs.admission.outputs.demande }}
           PREDICAT: ${{ needs.revue.outputs.predicat }}
-        run: python3 -I outils/revue.py preparer --travail "$RUNNER_TEMP/independant.git" --dossier "$RUNNER_TEMP/a-signer" --sortie "$GITHUB_OUTPUT"
+        run: python3 -I outils/revue2.py preparer --travail "$RUNNER_TEMP/independant.git" --dossier "$RUNNER_TEMP/a-signer" --sortie "$GITHUB_OUTPUT"
       - id: attest
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ steps.preparer.outputs.sujet_nom }}
           subject-digest: ${{ steps.preparer.outputs.sujet_digest }}
-          predicate-type: urn:olistic:confiance:attestation-revue:1
+          predicate-type: urn:olistic:confiance:attestation-revue:2
           predicate-path: ${{ runner.temp }}/a-signer/predicat.json
           create-storage-record: false
           show-summary: false
@@ -129,6 +139,6 @@ jobs:
           NUMERO: ${{ github.event.issue.number }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 -I outils/revue.py reponse --fichier "$RUNNER_TEMP/reponse.md"
+          python3 -I outils/revue2.py reponse --fichier "$RUNNER_TEMP/reponse.md"
           gh issue comment "$NUMERO" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/reponse.md"
           gh issue close "$NUMERO" --repo "$GITHUB_REPOSITORY"

@@ -28,8 +28,10 @@ def objets(s):
 
 class TestSchemas(unittest.TestCase):
     def test_inventaire(self):
-        self.assertEqual(set(tous()), {f"{n}-v1.schema.json" for n in
-                                       ("demande", "sujet-revue", "sortie-relecteur", "attestation-revue", "politique", "ancres")})
+        v1 = {f"{n}-v1.schema.json" for n in
+              ("demande", "sujet-revue", "sortie-relecteur", "attestation-revue", "politique", "ancres")}
+        v2 = {f"{n}-v2.schema.json" for n in ("sujet-revue", "attestation-revue", "politique")}
+        self.assertEqual(set(tous()), v1 | v2)
 
     def test_meta_schema_2020_12(self):
         for nom, s in tous().items():

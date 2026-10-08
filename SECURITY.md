@@ -13,3 +13,9 @@ du job `attestation`, faire paraître dans une attestation une donnée privée, 
 demande sous l'identité d'un demandeur par son seul login, consommer deux fois
 un même `request_id`, obtenir une `Review-Attestation` sans attestation vérifiée
 et consommée, ou faire accepter un bundle qui ne vient pas de `bundle_url`.
+
+Pour `revue/2` également : faire apparaître la clé du relecteur hors de l'en-tête
+d'autorisation (prompt, journal, sortie, attestation, autre job), faire émettre une
+attestation à partir d'une enveloppe fournisseur invalide, faire exécuter par le
+relecteur un outil ou du code venu du candidat, ou faire accepter par un
+vérificateur une attestation d'un relecteur non acceptable.
