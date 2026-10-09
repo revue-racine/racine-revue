@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:olistic:confiance:schema:sujet-revue:2",
+  "title": "Sujet de revue v2 — entièrement recalculé par le workflow",
+  "description": "Encodage canonique (clés triées, sans espace, UTF-8) : son sha256 est le digest du sujet in-toto. base = ancre gouvernée ; objet_sha256 = sha256 de l'objet commit au format d'objet git ; arbre_sha256 et perimetre_sha256 = manifestes sha256 du contenu, sans gitlink. Format distinct du v1 : un sujet v2 n'a jamais le digest d'un sujet v1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "depot",
+    "base",
+    "pointe",
+    "perimetre_sha256"
+  ],
+  "properties": {
+    "format": {
+      "const": "olistic.confiance.sujet-revue/2"
+    },
+    "depot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alias",
+        "repository_id"
+      ],
+      "properties": {
+        "alias": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,39}$"
+        },
+        "repository_id": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "base": {
+      "$ref": "#/$defs/identite_commit"
+    },
+    "pointe": {
+      "$ref": "#/$defs/identite_commit"
+    },
+    "perimetre_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "$defs": {
+    "identite_commit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "objet_sha256",
+        "arbre",
+        "arbre_sha256"
+      ],
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "objet_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "arbre": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "arbre_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

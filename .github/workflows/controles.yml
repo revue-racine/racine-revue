@@ -36,5 +36,7 @@ jobs:
         run: '"$RUNNER_TEMP/bin/actionlint" -no-color .github/workflows/*.yml'
       - name: zizmor (aucun constat toléré, informatif compris)
         run: '"$HOME/.local/bin/zizmor" --offline --persona=auditor --min-severity=informational .github/workflows/'
-      - name: Politique ancrée
+      - name: Politique v1 ancrée (figée, vérification des attestations v1)
         run: python3 -I outils/revue.py politique --finale
+      - name: Politique v2 ancrée
+        run: python3 -I outils/revue2.py politique --finale

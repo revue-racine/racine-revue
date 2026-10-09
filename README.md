@@ -1,9 +1,20 @@
 # Racine de confiance — revue indépendante
 
 Ce dépôt produit des **attestations de revue** signées par GitHub Actions
-(Sigstore, sans clé privée gérée ici) : « le protocole `revue/1` a été appliqué
+(Sigstore, sans clé privée gérée ici) : « le protocole de revue a été appliqué
 à exactement ce commit et à exactement cet arbre, et voici le verdict
-normalisé ». Il est public pour que n'importe qui puisse vérifier une
+normalisé ».
+
+- **`revue/2`** est le producteur actif prévu **après la fusion du Lot 2** :
+  relecteur `openai-responses`, politique génération 2.
+- **`revue/1`** est conservé, figé octet pour octet, **pour la vérification
+  historique** des attestations v1 déjà émises ; il ne produit plus rien après
+  cette fusion.
+- **Canari sans pouvoir** : sous la génération 2, le relecteur v2 n'est pas
+  acceptable. Une attestation v2 est consultative, quel que soit son verdict : elle
+  n'autorise, n'approuve et ne débloque rien, et aucun pont P1 ne l'accepte.
+
+Il est public pour que n'importe qui puisse vérifier une
 attestation, et pour bénéficier des attestations d'artefacts de GitHub, réservées
 aux dépôts publics hors offre Enterprise.
 
@@ -15,20 +26,25 @@ dépôt, ni choisir le verdict, ni fournir le sujet.
 
 | Chemin | Rôle |
 |---|---|
-| `.github/workflows/revue.yml` | workflow de confiance : admission, sujet recalculé, relecture, signature, réponse |
+| `.github/workflows/revue.yml` | workflow de confiance : admission, sujet recalculé, relecture, signature, réponse — produit des attestations `revue/2` seulement |
 | `.github/workflows/controles.yml` | contrôles statiques exigés avant toute fusion |
-| `protocol/revue-v1.md` | protocole de revue v1 (son empreinte figure dans chaque attestation) |
-| `schemas/` | schémas fermés : demande, sujet, sortie du relecteur, prédicat, politique |
-| `policy/confiance-v1.json` | politique : identité de la racine, génération, demandeurs, dépôts, relecteurs, fraîcheur, limites |
+| `protocol/revue-v1.md` | protocole de revue v1, figé : il sert à vérifier les attestations v1 déjà émises |
+| `protocol/revue-v2.md` | protocole de revue v2 (son empreinte figure dans chaque attestation v2) |
+| `schemas/` | schémas fermés : demande, sujet, sortie du relecteur, prédicat, politique (v1 figés ; sujet, prédicat et politique en v2) |
+| `policy/confiance-v1.json` | politique v1 (génération 1), figée |
+| `policy/confiance-v2.json` | politique v2 (génération 2) : identité de la racine, demandeurs, dépôts, relecteur `openai-responses` non acceptable, fraîcheur, limites |
 | `policy/ancres-v1.json` | ancres gouvernées : base de revue de chaque dépôt, modifiée par PR seulement |
 | `policy/rulesets/`, `policy/parametres-depot.md` | protections du dépôt, sous forme rejouable et vérifiable |
-| `outils/` | code du workflow (bibliothèque standard seule), vérificateur de référence, pont vers l'attestation SSH du P1 |
+| `outils/` | code du workflow (bibliothèque standard seule) : producteur v2 (`revue2.py`, `relecteur_openai.py`, consigne du relecteur), producteur v1 conservé (`revue.py`), vérificateurs v1 (`verifier.py`) et v2 candidat (`verifier2.py`), pont P1 (v1 seulement, inactif) |
 | `tests/` | tests statiques et fonctionnels, sans réseau ni secret |
 | `BOOTSTRAP.md` | procédure exceptionnelle de création, et son journal |
 
 ## Ce qui ne vit jamais ici
 
-- aucun secret, jeton, clé privée ou credential d'un service tiers ;
+- aucun secret, jeton, clé privée ou credential d'un service tiers dans les
+  fichiers ou l'historique. La seule clé de service tiers (relecteur `revue/2`)
+  est un secret de l'environnement GitHub `relecteur-openai`, restreint à
+  `main`, que seul le step de relecture reçoit ;
 - aucune donnée métier, aucun contenu d'un dépôt relu (code, diff, chemins,
   messages de commit, texte de revue) — ni dans les fichiers, ni dans les logs,
   ni dans les artifacts, ni dans les attestations ;
@@ -55,7 +71,11 @@ le commentaire n'est pas une preuve, l'attestation l'est.
 
 ## Vérifier une attestation
 
-`outils/verifier.py` (protocole §7). Il épingle l'identité numérique et les noms
+Attestations v2 : `outils/verifier2.py` (protocole `revue-v2.md` §7), vérificateur
+**candidat**, avec une configuration consommateur distincte de celle du v1. Sous la
+politique génération 2, il rejette toute attestation v2 (`relecteur_non_acceptable`).
+
+Attestations v1 : `outils/verifier.py` (protocole v1 §7), inchangé. Il épingle l'identité numérique et les noms
 de ce dépôt et de son propriétaire, le workflow et son commit, la branche `main`,
 l'émetteur OIDC, le déclencheur `issues`, les runners hébergés et les empreintes
 exactes de la politique et du protocole ; il recalcule le sujet depuis le dépôt
@@ -63,6 +83,24 @@ local avec son ancre, contrôle la fraîcheur et le rejeu, et agrège toutes les
 attestations du sujet, récupérées par `bundle_url`. C'est une vérification pure :
 elle n'autorise rien. Le seul chemin vers une attestation SSH P1 est
 `outils/pont_p1.py`, qui vérifie, consomme et signe dans une seule opération.
+
+## Coexistence `revue/1` et `revue/2`
+
+| | `revue/1` | `revue/2` |
+|---|---|---|
+| Production | arrêtée à la fusion du Lot 2 | seule production du workflow |
+| Attestations existantes | restent vérifiables, inchangées | — |
+| Protocole, politique, schémas | `revue-v1.md`, `confiance-v1.json` (génération 1), `*-v1` : figés octet pour octet | `revue-v2.md`, `confiance-v2.json` (génération 2), sujet / prédicat / politique en `-v2` |
+| Vérificateur, configuration consommateur | `verifier.py`, configuration v1 épinglant la politique v1 | `verifier2.py`, configuration **candidate distincte** épinglant la politique v2 |
+| Relecteur, portée | `factice`, jamais acceptable | `openai-responses`, **non acceptable** : consultatif |
+| Pont P1 | `pont_p1.py`, v1 seulement, inactif | aucun |
+
+Communs et inchangés : format de demande (un `request_id` est unique pour les deux
+versions), ancres gouvernées, schéma et normalisation de la sortie du relecteur.
+Les sujets v1 et v2 ont des formats distincts : leurs digests ne se mêlent jamais.
+Un vérificateur n'accepte jamais une attestation de l'autre version (type de
+prédicat épinglé). Ne jamais réutiliser une configuration consommateur v1 pour le v2,
+ni l'inverse.
 
 ## Données rendues publiques
 
@@ -86,7 +124,24 @@ privé ne se résout pas publiquement.
 
 ## État
 
-Lot 1 : relecteur `factice` seul — toute attestation porte `INDETERMINE` et
-aucune n'est acceptante. Seul le dépôt lui-même (`auto-test`) peut être relu.
-Le relecteur réel, la lecture des dépôts privés et l'exécution du pont P1
-relèvent du Lot 2.
+Lot 1 (clos) : relecteur `factice` seul — toute attestation v1 porte
+`INDETERMINE` et aucune n'est acceptante.
+
+Lot 2 : protocole `revue/2`, relecteur `openai-responses` (OpenAI Responses
+direct, sans outil, sans stockage, sans exécution du code candidat), politique
+génération 2 où ce relecteur est **non acceptable** : toute attestation v2 est
+**consultative**, quel que soit son verdict, et le commentaire de réponse le dit.
+Seul le dépôt lui-même (`auto-test`) peut être relu. Aucun pont P1 pour le v2.
+
+Limites assumées du Lot 2 :
+
+- l'identité du modèle (`relecteur.modele`) est celle que le fournisseur déclare
+  dans sa réponse ; elle n'est pas prouvée cryptographiquement, et un identifiant
+  sans date peut désigner des versions successives ;
+- la sortie brute du relecteur (constats compris) n'est ni publiée ni conservée :
+  seule son empreinte est attestée ;
+- l'encadrement du diff n'est pas une frontière de sécurité : un relecteur
+  automatique peut être influencé par le contenu qu'il relit ;
+- le workflow v2 ne doit pas être activé avant que l'administrateur ait créé et
+  protégé l'environnement `relecteur-openai` (`policy/parametres-depot.md` §5).
+  Sans clé, toute demande est refusée sans attestation (`relecteur_cle_absente`).

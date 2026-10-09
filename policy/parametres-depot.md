@@ -16,7 +16,8 @@ documentation GitHub au moment du bootstrap, et noter dans le journal ce qui a
 | Fusion | squash seul, branche supprimée après fusion | `gh api -X PATCH repos/$R -F allow_squash_merge=true -F allow_merge_commit=false -F allow_rebase_merge=false -F allow_auto_merge=false -F delete_branch_on_merge=true` |
 | Secret scanning + push protection | activés | `gh api -X PATCH repos/$R --input -` avec `security_and_analysis` |
 | Signalement privé de vulnérabilité | activé | `gh api -X PUT repos/$R/private-vulnerability-reporting` |
-| Collaborateurs, clés de déploiement, webhooks, environnements, secrets, variables | **aucun** | contrôle §4 |
+| Collaborateurs, clés de déploiement, webhooks, variables, secrets de dépôt | **aucun** | contrôle §4 |
+| Environnements | **un seul** : `relecteur-openai` (Lot 2), avec son unique secret | §5 |
 
 ## 2. Actions
 
@@ -49,11 +50,36 @@ gh api repos/$R/rulesets/<id> --jq '.bypass_actors'            # [] pour chaque 
 gh api repos/$R/collaborators --jq 'map(.login)'                 # [<administrateur>] seul
 gh api repos/$R/keys --jq length                                 # 0
 gh api repos/$R/hooks --jq length                                # 0
-gh api repos/$R/environments --jq .total_count                   # 0
+gh api repos/$R/environments --jq '[.environments[].name]'        # ["relecteur-openai"] (Lot 2)
 gh api repos/$R/actions/secrets --jq .total_count                # 0
 gh api repos/$R/actions/variables --jq .total_count              # 0
 gh api repos/$R/actions/runners --jq .total_count                # 0
 gh api repos/$R/actions/permissions
 gh api repos/$R/actions/permissions/selected-actions
 gh api repos/$R/actions/permissions/workflow
+gh api repos/$R/environments/relecteur-openai --jq '{protection_rules, deployment_branch_policy}'
+gh api repos/$R/environments/relecteur-openai/deployment-branch-policies --jq '[.branch_policies[].name]'  # ["main"]
+gh api repos/$R/environments/relecteur-openai/secrets --jq '[.secrets[].name]'  # ["CLE_RELECTEUR_OPENAI"]
+```
+
+## 5. Environnement du relecteur (Lot 2) — à créer AVANT la fusion du Lot 2
+
+Un job qui référence un environnement inexistant le fait créer par GitHub, sans
+restriction. L'environnement doit donc exister, protégé, **avant** que `main`
+contienne le workflow v2 ; sinon, ne pas fusionner.
+
+| Réglage | Valeur |
+|---|---|
+| Nom | `relecteur-openai` |
+| Branches de déploiement | règle personnalisée, `main` seule (`protected_branches=false`, `custom_branch_policies=true`) |
+| Relecteurs requis | recommandé pendant le canari : l'administrateur seul (chaque exécution payante est alors approuvée à la main) |
+| Secret | `CLE_RELECTEUR_OPENAI` : clé d'un projet OpenAI dédié, plafond de dépenses, aucune autre utilisation, jamais présente sur l'hôte des agents |
+| Variables | aucune |
+
+```
+gh api -X PUT repos/$R/environments/relecteur-openai --input - <<'JSON'
+{"deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}
+JSON
+gh api -X POST repos/$R/environments/relecteur-openai/deployment-branch-policies -f name=main -f type=branch
+gh secret set CLE_RELECTEUR_OPENAI --env relecteur-openai --repo $R   # saisie interactive, jamais en argument
 ```

@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:olistic:confiance:schema:politique:2",
+  "title": "Politique de confiance v2",
+  "description": "Politique du protocole revue/2. Distincte de la politique v1, qui reste figée pour vérifier les attestations v1. Toute modification change l'empreinte, que les consommateurs épinglent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "version",
+    "generation",
+    "racine",
+    "type_predicat",
+    "demandeurs",
+    "depots",
+    "relecteurs",
+    "fraicheur",
+    "limites"
+  ],
+  "properties": {
+    "format": {
+      "const": "olistic.confiance.politique/2"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 2
+    },
+    "racine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "proprietaire",
+        "proprietaire_id",
+        "depot",
+        "depot_id",
+        "workflow",
+        "nom_workflow",
+        "ref"
+      ],
+      "properties": {
+        "proprietaire": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9-]{1,39}$"
+        },
+        "proprietaire_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "depot": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9._-]{1,100}$"
+        },
+        "depot_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "workflow": {
+          "const": ".github/workflows/revue.yml"
+        },
+        "nom_workflow": {
+          "const": "revue"
+        },
+        "ref": {
+          "const": "refs/heads/main"
+        }
+      }
+    },
+    "type_predicat": {
+      "const": "urn:olistic:confiance:attestation-revue:2"
+    },
+    "demandeurs": {
+      "type": "array",
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "login",
+          "id"
+        ],
+        "properties": {
+          "login": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{1,39}$"
+          },
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "depots": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "alias",
+          "repository_id"
+        ],
+        "properties": {
+          "alias": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{1,39}$"
+          },
+          "repository_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "relecteurs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "famille",
+          "actif",
+          "acceptable",
+          "modeles"
+        ],
+        "properties": {
+          "famille": {
+            "enum": [
+              "openai-responses"
+            ]
+          },
+          "actif": {
+            "type": "boolean"
+          },
+          "acceptable": {
+            "type": "boolean"
+          },
+          "modeles": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 5,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:/-]{1,100}$"
+            }
+          }
+        }
+      },
+      "maxItems": 5
+    },
+    "fraicheur": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coupure",
+        "validite_s",
+        "tolerance_instant_s",
+        "derive_horloge_s"
+      ],
+      "properties": {
+        "coupure": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "validite_s": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 2592000
+        },
+        "tolerance_instant_s": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 7200
+        },
+        "derive_horloge_s": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 300
+        }
+      }
+    },
+    "limites": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "corps_demande_octets",
+        "diff_octets"
+      ],
+      "properties": {
+        "corps_demande_octets": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096
+        },
+        "diff_octets": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000000
+        }
+      }
+    }
+  }
+}

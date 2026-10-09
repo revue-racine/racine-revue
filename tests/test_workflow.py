@@ -92,12 +92,43 @@ class TestWorkflows(unittest.TestCase):
                         self.assertNotIn("ref", etape.get("with", {}), nom)
                         self.assertNotIn("repository", etape.get("with", {}), nom)
 
-    def test_aucun_secret_ni_artifact_au_lot1(self):
+    def test_aucun_artifact_ni_runner_auto_heberge(self):
         for nom, (texte, _) in self.wfs.items():
-            self.assertNotIn("secrets.", texte, nom)
             self.assertNotIn("upload-artifact", texte, nom)
-            self.assertNotIn("environment:", texte, nom)
             self.assertNotIn("self-hosted", texte, nom)
+
+    def test_lot2_secret_unique_dans_le_seul_step_de_relecture(self):
+        """Lot 2 : exactement une référence de secret, la clé du relecteur, dans
+        le seul step `revue` du job `revue`, attaché à l'environnement dédié.
+        Aucun autre job (signature compris) ne voit ni secret ni environnement."""
+        self.assertNotIn("secrets.", self.wfs["controles.yml"][0])
+        self.assertNotIn("environment:", self.wfs["controles.yml"][0])
+        texte, doc = self.wfs["revue.yml"]
+        self.assertEqual(texte.count("secrets."), 1)
+        self.assertEqual(texte.count("environment:"), 1)
+        jobs = doc["jobs"]
+        for job, d in jobs.items():
+            if job != "revue":
+                self.assertNotIn("environment", d, job)
+                self.assertNotIn("secrets.", repr(d), job)
+        self.assertEqual(jobs["revue"]["environment"], "relecteur-openai")
+        avec_secret = [e for e in jobs["revue"]["steps"] if "secrets." in repr(e)]
+        self.assertEqual(len(avec_secret), 1)
+        self.assertEqual(avec_secret[0]["id"], "revue")
+        self.assertEqual(avec_secret[0]["env"]["CLE_RELECTEUR"], "${{ secrets.CLE_RELECTEUR_OPENAI }}")
+        self.assertNotIn("secrets.", avec_secret[0]["run"])
+
+    def test_lot2_relecture_serialisee(self):
+        self.assertEqual(self.wfs["revue.yml"][1]["jobs"]["revue"]["concurrency"],
+                         {"group": "revue-relecteur", "cancel-in-progress": "false"})
+
+    def test_lot2_producteur_v2_seulement(self):
+        """Après le Lot 2, le workflow ne produit que des attestations revue/2 :
+        aucune sous-commande du producteur v1 n'est appelée."""
+        texte = self.wfs["revue.yml"][0]
+        self.assertNotIn("outils/revue.py", texte)
+        for cmd in ("admission", "revue", "preparer", "reponse"):
+            self.assertIn(f"python3 -I outils/revue2.py {cmd} ", texte)
 
     def test_seul_le_job_attestation_signe(self):
         jobs = self.wfs["revue.yml"][1]["jobs"]
@@ -105,7 +136,7 @@ class TestWorkflows(unittest.TestCase):
             utilise_attest = any(e.get("uses", "").startswith("actions/attest@") for e in d["steps"])
             self.assertEqual(utilise_attest, job == "attestation", job)
         attest = [e for e in jobs["attestation"]["steps"] if "uses" in e and "attest@" in e["uses"]][0]["with"]
-        self.assertEqual(attest["predicate-type"], "urn:olistic:confiance:attestation-revue:1")
+        self.assertEqual(attest["predicate-type"], "urn:olistic:confiance:attestation-revue:2")
         self.assertEqual(attest["create-storage-record"], "false")
         self.assertNotIn("subject-path", attest)
         self.assertIn("steps.preparer.outputs", attest["subject-digest"])
