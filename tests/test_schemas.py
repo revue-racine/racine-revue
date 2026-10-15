@@ -31,7 +31,8 @@ class TestSchemas(unittest.TestCase):
         v1 = {f"{n}-v1.schema.json" for n in
               ("demande", "sujet-revue", "sortie-relecteur", "attestation-revue", "politique", "ancres")}
         v2 = {f"{n}-v2.schema.json" for n in ("sujet-revue", "attestation-revue", "politique")}
-        self.assertEqual(set(tous()), v1 | v2)
+        v3 = {f"{n}-v3.schema.json" for n in ("sujet-revue", "attestation-revue", "politique")}
+        self.assertEqual(set(tous()), v1 | v2 | v3)
 
     def test_meta_schema_2020_12(self):
         for nom, s in tous().items():
@@ -44,11 +45,13 @@ class TestSchemas(unittest.TestCase):
 
     def test_sujet_identique_dans_l_attestation(self):
         s = tous()
-        sujet = {k: v for k, v in s["sujet-revue-v1.schema.json"].items()
-                 if k not in ("$schema", "$id", "title", "description", "$defs")}
-        att = s["attestation-revue-v1.schema.json"]["$defs"]
-        self.assertEqual(att["sujet"], sujet)
-        self.assertEqual(att["identite_commit"], s["sujet-revue-v1.schema.json"]["$defs"]["identite_commit"])
+        for version in (1, 2, 3):
+            sujet = {k: v for k, v in s[f"sujet-revue-v{version}.schema.json"].items()
+                     if k not in ("$schema", "$id", "title", "description", "$defs")}
+            att = s[f"attestation-revue-v{version}.schema.json"]["$defs"]
+            self.assertEqual(att["sujet"], sujet, version)
+            self.assertEqual(att["identite_commit"],
+                             s[f"sujet-revue-v{version}.schema.json"]["$defs"]["identite_commit"], version)
 
     def test_concordance_avec_jsonschema(self):
         pol = aide.politique_ancree()

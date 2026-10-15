@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:olistic:confiance:schema:sujet-revue:3",
+  "title": "Sujet de revue v3 — entièrement recalculé hors ligne",
+  "description": "Format distinct des sujets v1 et v2. Le contenu et les empreintes Git gardent la même sémantique ; le changement de format rend les digests disjoints.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "depot", "base", "pointe", "perimetre_sha256"],
+  "properties": {
+    "format": {
+      "const": "olistic.confiance.sujet-revue/3"
+    },
+    "depot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alias", "repository_id"],
+      "properties": {
+        "alias": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,39}$"
+        },
+        "repository_id": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "base": {
+      "$ref": "#/$defs/identite_commit"
+    },
+    "pointe": {
+      "$ref": "#/$defs/identite_commit"
+    },
+    "perimetre_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "$defs": {
+    "identite_commit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "objet_sha256", "arbre", "arbre_sha256"],
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "objet_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "arbre": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "arbre_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}
