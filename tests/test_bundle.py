@@ -32,6 +32,9 @@ AUTORISES = {
     "schemas/sujet-revue-v3.schema.json", "schemas/attestation-revue-v3.schema.json",
     "schemas/politique-v3.schema.json", "outils/revue3.py", "outils/verifier3.py",
     "tests/aide_v3.py",
+    # revue/3 (Lot 3A.2, adaptateur OpenRouter dormant)
+    "outils/relecteur_openrouter.py", "outils/transport_openrouter.py",
+    "tests/aide_openrouter.py",
     "tests/requirements.txt", "tests/installer-actionlint.sh", "tests/controle_noms.py",
 }
 MOTIFS_SECRETS = [
