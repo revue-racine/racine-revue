@@ -27,6 +27,11 @@ AUTORISES = {
     "schemas/politique-v2.schema.json",
     "outils/revue2.py", "outils/relecteur_openai.py", "outils/consigne-relecteur-v2.txt",
     "outils/verifier2.py", "tests/aide_v2.py", "tests/oracle_v2.py",
+    # revue/3 (Lot 3A.1, socle contractuel inerte)
+    "protocol/revue-v3.md", "policy/confiance-v3.json",
+    "schemas/sujet-revue-v3.schema.json", "schemas/attestation-revue-v3.schema.json",
+    "schemas/politique-v3.schema.json", "outils/revue3.py", "outils/verifier3.py",
+    "tests/aide_v3.py",
     "tests/requirements.txt", "tests/installer-actionlint.sh", "tests/controle_noms.py",
 }
 MOTIFS_SECRETS = [

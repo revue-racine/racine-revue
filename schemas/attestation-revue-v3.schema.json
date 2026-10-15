@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:olistic:confiance:schema:attestation-revue:3",
+  "title": "Prédicat synthétique de revue v3 — non autorisant",
+  "description": "Ce prédicat est vérifiable hors ligne mais ne porte aucune preuve cryptographique, aucune identité de modèle ou fournisseur et aucune approbation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format", "sujet", "demande", "protocole", "politique", "ancres_sha256",
+    "relecteur", "verification", "verdict", "motif", "rapport_sha256", "instant", "autorisation"
+  ],
+  "properties": {
+    "format": {
+      "const": "olistic.confiance.attestation-revue/3"
+    },
+    "sujet": {
+      "$ref": "#/$defs/sujet"
+    },
+    "demande": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issue", "demandeur_id", "request_id", "declaration_p1"],
+      "properties": {
+        "issue": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "demandeur_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "request_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "declaration_p1": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["classe", "auteur"],
+          "properties": {
+            "classe": {
+              "enum": ["A", "B"]
+            },
+            "auteur": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{1,39}$"
+            }
+          }
+        }
+      }
+    },
+    "protocole": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "sha256"],
+      "properties": {
+        "version": {
+          "const": "revue/3"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "politique": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "generation", "etat", "sha256"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "generation": {
+          "const": 3
+        },
+        "etat": {
+          "const": "dormant"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "ancres_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "relecteur": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["famille", "modele", "fournisseur", "endpoint", "acceptable"],
+      "properties": {
+        "famille": {
+          "enum": ["gpt-codex-family", "claude-family"]
+        },
+        "modele": {
+          "type": "null"
+        },
+        "fournisseur": {
+          "type": "null"
+        },
+        "endpoint": {
+          "type": "null"
+        },
+        "acceptable": {
+          "const": false
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nature", "cryptographie_effective", "signature_effective", "provenance_effective", "controles_reportes"],
+      "properties": {
+        "nature": {
+          "const": "synthetique-hors-ligne"
+        },
+        "cryptographie_effective": {
+          "const": false
+        },
+        "signature_effective": {
+          "const": false
+        },
+        "provenance_effective": {
+          "const": false
+        },
+        "controles_reportes": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "signature-cryptographique",
+              "provenance-sigstore",
+              "identite-modele-fournisseur",
+              "pont-p1"
+            ]
+          }
+        }
+      }
+    },
+    "verdict": {
+      "enum": ["FAVORABLE", "DEFAVORABLE", "INDETERMINE"]
+    },
+    "motif": {
+      "enum": [null, "synthetique", "sortie_invalide"]
+    },
+    "rapport_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "instant": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "autorisation": {
+      "const": false
+    }
+  },
+  "$defs": {
+    "sujet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "depot", "base", "pointe", "perimetre_sha256"],
+      "properties": {
+        "format": {
+          "const": "olistic.confiance.sujet-revue/3"
+        },
+        "depot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["alias", "repository_id"],
+          "properties": {
+            "alias": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{1,39}$"
+            },
+            "repository_id": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "base": {
+          "$ref": "#/$defs/identite_commit"
+        },
+        "pointe": {
+          "$ref": "#/$defs/identite_commit"
+        },
+        "perimetre_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "identite_commit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "objet_sha256", "arbre", "arbre_sha256"],
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "objet_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "arbre": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "arbre_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

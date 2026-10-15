@@ -1,0 +1,54 @@
+{
+  "format": "olistic.confiance.politique/3",
+  "version": 1,
+  "generation": 3,
+  "etat": "dormant",
+  "racine": {
+    "proprietaire": "revue-racine",
+    "proprietaire_id": 339338245,
+    "depot": "racine-revue",
+    "depot_id": 1409404929,
+    "workflow": ".github/workflows/revue.yml",
+    "nom_workflow": "revue",
+    "ref": "refs/heads/main"
+  },
+  "type_predicat": "urn:olistic:confiance:attestation-revue:3",
+  "demandeurs": [
+    {
+      "login": "miguelfromba",
+      "id": 241122414
+    }
+  ],
+  "depots": [
+    {
+      "alias": "auto-test",
+      "repository_id": 1409404929
+    }
+  ],
+  "selection": [
+    {
+      "famille_auteur": "gpt-codex-family",
+      "famille_relecture": "claude-family"
+    }
+  ],
+  "relecteurs": [
+    {
+      "famille": "claude-family",
+      "actif": false,
+      "acceptable": false,
+      "modeles": [],
+      "fournisseurs": [],
+      "endpoints": []
+    }
+  ],
+  "fraicheur": {
+    "coupure": "2026-10-15T00:00:00Z",
+    "validite_s": 604800,
+    "tolerance_instant_s": 1800,
+    "derive_horloge_s": 60
+  },
+  "limites": {
+    "corps_demande_octets": 1024,
+    "diff_octets": 500000
+  }
+}
