@@ -1,4 +1,4 @@
-"""Vérificateur v3 : cohérence synthétique, refus causaux, aucune crypto."""
+"""Variante synthétique v3 : cohérence locale et absence d'autorisation."""
 import copy
 import json
 import subprocess
@@ -156,10 +156,24 @@ class TestVerifierV3(unittest.TestCase):
             mutation(predicat)
             self.assertFalse(self.verifier(predicat).verifiee)
 
-    def test_verification_cryptographique_est_explicitement_absente(self):
-        with self.assertRaises(revue.Refus) as cm:
-            verifier3.verifier_cryptographique(self.predicat())
-        self.assertEqual(cm.exception.motif, "verification_cryptographique_non_implementee")
+    def test_variante_crypto_ne_recoit_aucune_preuve_de_l_appelant(self):
+        parametres = set(__import__("inspect").signature(
+            verifier3.verifier_cryptographique
+        ).parameters)
+        self.assertFalse(parametres & {
+            "predicat", "verdict", "resultat", "resultats", "bundle", "decision",
+        })
+        decision = verifier3.verifier_cryptographique(
+            "/configuration/test/absente",
+            aide.RACINE / "policy/confiance-v3.json",
+            self.sujet,
+            aide.RID,
+            tempfile.gettempdir(),
+        )
+        self.assertFalse(decision.cryptographiquement_valide)
+        self.assertFalse(decision.conforme_au_contrat)
+        self.assertFalse(decision.acceptable_p1)
+        self.assertEqual(decision.motif, "confiance_v3_invalide")
 
 
 if __name__ == "__main__":

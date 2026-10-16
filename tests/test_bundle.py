@@ -35,6 +35,8 @@ AUTORISES = {
     # revue/3 (Lot 3A.2, adaptateur OpenRouter dormant)
     "outils/relecteur_openrouter.py", "outils/transport_openrouter.py",
     "tests/aide_openrouter.py",
+    # revue/3 (Lot 3A.3, attestation Sigstore et pont P1 de test dormant)
+    "outils/pont_p1_v3.py", "tests/aide_v3_crypto.py",
     "tests/requirements.txt", "tests/installer-actionlint.sh", "tests/controle_noms.py",
 }
 MOTIFS_SECRETS = [

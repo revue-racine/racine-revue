@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:olistic:confiance:schema:attestation-revue:3",
-  "title": "Prédicat synthétique de revue v3 — non autorisant",
-  "description": "Ce prédicat est vérifiable hors ligne mais ne porte aucune preuve cryptographique, aucune identité de modèle ou fournisseur et aucune approbation.",
+  "title": "Prédicat de revue v3 — variantes synthétique et Sigstore",
+  "description": "Les deux variantes restent non autorisantes. La variante synthétique ne porte aucune preuve ; la variante Sigstore lie une identité de relecteur à une preuve cryptographique et de provenance vérifiée hors du prédicat.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -96,13 +96,19 @@
           "enum": ["gpt-codex-family", "claude-family"]
         },
         "modele": {
-          "type": "null"
+          "type": ["null", "string"],
+          "minLength": 1,
+          "maxLength": 160
         },
         "fournisseur": {
-          "type": "null"
+          "type": ["null", "string"],
+          "minLength": 1,
+          "maxLength": 80
         },
         "endpoint": {
-          "type": "null"
+          "type": ["null", "string"],
+          "minLength": 1,
+          "maxLength": 160
         },
         "acceptable": {
           "const": false
@@ -113,22 +119,43 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["nature", "cryptographie_effective", "signature_effective", "provenance_effective", "controles_reportes"],
+      "enum": [
+        {
+          "nature": "synthetique-hors-ligne",
+          "cryptographie_effective": false,
+          "signature_effective": false,
+          "provenance_effective": false,
+          "controles_reportes": [
+            "signature-cryptographique",
+            "provenance-sigstore",
+            "identite-modele-fournisseur",
+            "pont-p1"
+          ]
+        },
+        {
+          "nature": "cryptographique-sigstore",
+          "cryptographie_effective": true,
+          "signature_effective": true,
+          "provenance_effective": true,
+          "controles_reportes": []
+        }
+      ],
       "properties": {
         "nature": {
-          "const": "synthetique-hors-ligne"
+          "enum": ["synthetique-hors-ligne", "cryptographique-sigstore"]
         },
         "cryptographie_effective": {
-          "const": false
+          "type": "boolean"
         },
         "signature_effective": {
-          "const": false
+          "type": "boolean"
         },
         "provenance_effective": {
-          "const": false
+          "type": "boolean"
         },
         "controles_reportes": {
           "type": "array",
-          "minItems": 4,
+          "minItems": 0,
           "maxItems": 4,
           "uniqueItems": true,
           "items": {
